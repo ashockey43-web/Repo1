@@ -14,6 +14,7 @@ const App = {
   restTimerEnd: null,    // timestamp when rest timer ends
   restTimerInterval: null, // setInterval handle for rest timer
   plateBarWeight: 45,    // selected bar weight for plate calculator
+  exGroupBy: 'muscle',   // exercise select grouping: 'muscle' | 'equipment'
 };
 
 // ── Storage helpers ────────────────────────────────────────────
@@ -321,20 +322,37 @@ function autoSuggest(available) {
 }
 
 function renderExerciseSelect(available) {
-  // Group by category
-  const groups = {};
-  available.forEach(ex => {
-    if (!groups[ex.category]) groups[ex.category] = [];
-    groups[ex.category].push(ex);
-  });
+  const groupBy = App.exGroupBy || 'muscle';
 
-  const catOrder = ['Chest','Back','Shoulders','Biceps','Triceps','Legs','Core','Cardio'];
-  const sortedCats = catOrder.filter(c => groups[c]).concat(
+  // Build groups
+  const groups = {};
+  if (groupBy === 'muscle') {
+    available.forEach(ex => {
+      const key = ex.category;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(ex);
+    });
+  } else {
+    // Group by primary equipment
+    const equipLabel = {};
+    ALL_EQUIPMENT.forEach(e => { equipLabel[e.id] = e.label; });
+    available.forEach(ex => {
+      const key = ex.equipment.length === 0 ? 'Bodyweight' : (equipLabel[ex.equipment[0]] || ex.equipment[0]);
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(ex);
+    });
+  }
+
+  const catOrder = groupBy === 'muscle'
+    ? ['Chest','Back','Shoulders','Biceps','Triceps','Legs','Core','Cardio']
+    : ALL_EQUIPMENT.map(e => e.label).concat(['Bodyweight']);
+
+  const sortedKeys = catOrder.filter(c => groups[c]).concat(
     Object.keys(groups).filter(c => !catOrder.includes(c))
   );
 
-  const groupsHTML = sortedCats.map(cat => {
-    const items = groups[cat].map(ex => {
+  const groupsHTML = sortedKeys.map(key => {
+    const items = groups[key].map(ex => {
       const sel = App.selectedExIds.includes(ex.id);
       return `
         <div class="ex-select-card ${sel ? 'selected' : ''}" onclick="toggleExercise('${ex.id}')">
@@ -346,7 +364,7 @@ function renderExerciseSelect(available) {
           <span class="badge ${muscleBadgeClass(ex.muscle)}">${ex.muscle}</span>
         </div>`;
     }).join('');
-    return `<div class="ex-group-label">${cat}</div>${items}`;
+    return `<div class="ex-group-label">${key}</div>${items}`;
   }).join('');
 
   const count = App.selectedExIds.length;
@@ -358,19 +376,17 @@ function renderExerciseSelect(available) {
         <p>Tap to select. Pre-selected is a suggested balanced workout.</p>
       </div>
 
-      <div style="padding:10px 16px; display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn btn-ghost btn-sm" onclick="selectAll(${JSON.stringify(available.map(e=>e.id))})">
-          Select All
-        </button>
-        <button class="btn btn-ghost btn-sm" onclick="clearAll()">
-          Clear
-        </button>
-        <button class="btn btn-ghost btn-sm" onclick="goToEquipSelect()">
-          ← Back
-        </button>
-        <button class="btn btn-ghost btn-sm" onclick="saveCurrentAsRoutine()">
-          ★ Save Routine
-        </button>
+      <div style="padding:10px 16px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <button class="btn btn-ghost btn-sm" onclick="selectAll(${JSON.stringify(available.map(e=>e.id))})">Select All</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearAll()">Clear</button>
+        <button class="btn btn-ghost btn-sm" onclick="goToEquipSelect()">← Back</button>
+        <button class="btn btn-ghost btn-sm" onclick="saveCurrentAsRoutine()">★ Save Routine</button>
+        <button class="btn btn-ghost btn-sm" onclick="openAddExerciseFromSelect()">+ Add Exercise</button>
+      </div>
+
+      <div style="padding:0 16px 10px; display:flex; gap:6px;">
+        <button class="btn btn-sm ${groupBy === 'muscle' ? 'btn-primary' : 'btn-ghost'}" onclick="setExGroupBy('muscle')">By Muscle</button>
+        <button class="btn btn-sm ${groupBy === 'equipment' ? 'btn-primary' : 'btn-ghost'}" onclick="setExGroupBy('equipment')">By Equipment</button>
       </div>
 
       <div style="padding-bottom: 80px;">
@@ -414,6 +430,56 @@ function clearAll() {
     (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
   );
   document.getElementById('app').innerHTML = renderExerciseSelect(available);
+}
+
+function setExGroupBy(mode) {
+  App.exGroupBy = mode;
+  const available = getAllExercises().filter(ex =>
+    (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
+  );
+  document.getElementById('app').innerHTML = renderExerciseSelect(available);
+}
+
+function openAddExerciseFromSelect() {
+  const catOptions = ['Chest','Back','Shoulders','Biceps','Triceps','Legs','Core','Cardio']
+    .map(c => `<option value="${c}">${c}</option>`).join('');
+  const equipOptions = ALL_EQUIPMENT.map(eq =>
+    `<label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+       <input type="checkbox" value="${eq.id}" class="custom-equip-cb"> ${eq.label}
+     </label>`).join('');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'settings-overlay';
+  overlay.id = 'custom-ex-overlay';
+  overlay.dataset.customType = 'strength';
+  overlay.dataset.context = 'workout-select';
+  overlay.onclick = (e) => { if (e.target === overlay) closeCustomExercisePanel(); };
+  overlay.innerHTML = `
+    <div class="settings-sheet" style="max-height:90vh;overflow-y:auto;">
+      <div class="settings-title">Add Custom Exercise</div>
+      <div class="meas-field" style="margin-bottom:10px;">
+        <div class="meas-field-label">Name</div>
+        <input class="input-field" type="text" id="cex-name" placeholder="e.g. Cable Fly" style="width:100%;box-sizing:border-box;">
+      </div>
+      <div class="meas-field" style="margin-bottom:10px;">
+        <div class="meas-field-label">Category / Muscle Group</div>
+        <select class="progress-select" id="cex-category" style="width:100%;">${catOptions}</select>
+      </div>
+      <div class="meas-field" style="margin-bottom:10px;">
+        <div class="meas-field-label">Type</div>
+        <div class="toggle-group">
+          <div class="toggle-opt active" id="cex-strength" onclick="selectCustomType('strength')">Strength</div>
+          <div class="toggle-opt" id="cex-cardio" onclick="selectCustomType('cardio')">Cardio</div>
+        </div>
+      </div>
+      <div class="meas-field" style="margin-bottom:16px;">
+        <div class="meas-field-label">Equipment (select all that apply)</div>
+        <div style="margin-top:8px;">${equipOptions}</div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;" onclick="saveCustomExercise()">Add &amp; Select Exercise</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px;" onclick="closeCustomExercisePanel()">Cancel</button>
+    </div>`;
+  document.body.appendChild(overlay);
 }
 
 function goToEquipSelect() {
@@ -1716,8 +1782,21 @@ function saveCustomExercise() {
   const all = Store.customExercises();
   all.push(ex);
   Store.saveCustomExercises(all);
+
+  const context = (overlay && overlay.dataset.context) || 'settings';
   closeCustomExercisePanel();
-  openSettings();
+
+  if (context === 'workout-select') {
+    App.selectedExIds.push(ex.id);
+    const available = getAllExercises().filter(exItem =>
+      (exItem.equipment.length === 0 ? App.selectedEquip.has('none') : exItem.equipment.every(e => App.selectedEquip.has(e)))
+    );
+    // Always show the newly created exercise even if equipment doesn't match filter
+    if (!available.find(e => e.id === ex.id)) available.push(ex);
+    document.getElementById('app').innerHTML = renderExerciseSelect(available);
+  } else {
+    openSettings();
+  }
 }
 
 function deleteCustomExercise(id) {
