@@ -253,10 +253,6 @@ function renderEquipmentSetup() {
 }
 
 function toggleEquip(id) {
-  if (id === 'none') {
-    // "Bodyweight" is always on — don't toggle off
-    return;
-  }
   if (App.selectedEquip.has(id)) {
     App.selectedEquip.delete(id);
   } else {
@@ -953,6 +949,9 @@ const MEASUREMENT_FIELDS = [
   { key: 'hips',       label: 'Hips',        unit: 'in'  },
   { key: 'bicep',      label: 'Bicep',       unit: 'in'  },
   { key: 'thigh',      label: 'Thigh',       unit: 'in'  },
+  { key: 'calves',     label: 'Calves',      unit: 'in'  },
+  { key: 'forearms',   label: 'Forearms',    unit: 'in'  },
+  { key: 'shoulders',  label: 'Shoulders',   unit: 'in'  },
   { key: 'neck',       label: 'Neck',        unit: 'in'  },
   { key: 'bodyFat',    label: 'Body Fat',    unit: '%'   },
 ];
@@ -1121,6 +1120,39 @@ function renderMeasurementChart(metricKey) {
 // ══════════════════════════════════════════════════════════════
 // SETTINGS
 // ══════════════════════════════════════════════════════════════
+function exportData() {
+  const data = {
+    workouts: Store.workouts(),
+    measurements: getMeasurements(),
+    settings: Store.settings()
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `gymtracker-backup-${today()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data.workouts) Store.saveWorkouts(data.workouts);
+      if (data.measurements) saveMeasurements(data.measurements);
+      if (data.settings) Store.saveSettings(data.settings);
+      alert('Data restored successfully!');
+      closeSettings();
+      document.getElementById('app').innerHTML = renderHome();
+    } catch (err) {
+      alert('Could not read backup file. Make sure it is a valid GymTracker backup.');
+    }
+  };
+  reader.readAsText(file);
+}
+
 function openSettings() {
   const settings = Store.settings();
   const unit = settings.unit || 'lbs';
@@ -1147,8 +1179,28 @@ function openSettings() {
 
       <div class="settings-row">
         <div>
+          <div class="settings-row-label">Back Up Data</div>
+          <div class="settings-row-sub">Download all workouts & measurements as a file</div>
+        </div>
+        <button class="btn btn-sm" onclick="exportData()">Export</button>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Restore Data</div>
+          <div class="settings-row-sub">Load a previously exported backup file</div>
+        </div>
+        <label class="btn btn-sm" style="cursor:pointer;">
+          Import
+          <input type="file" accept=".json" style="display:none"
+            onchange="importData(this.files[0])">
+        </label>
+      </div>
+
+      <div class="settings-row">
+        <div>
           <div class="settings-row-label">Clear All Data</div>
-          <div class="settings-row-sub">Delete all workout history permanently</div>
+          <div class="settings-row-sub">Permanently deletes all workouts &amp; measurements</div>
         </div>
         <button class="btn btn-danger btn-sm" onclick="clearAllData()">Clear</button>
       </div>
