@@ -851,6 +851,110 @@ function switchStatsTab(tab) {
   if (mSel) renderMeasurementChart(mSel.value);
 }
 
+// ── SVG Chart Builders ────────────────────────────────────────
+
+function buildLineChart(points, title, unit) {
+  if (points.length < 2) return `<div class="chart-empty">Log 2+ sessions to see this chart.</div>`;
+  const W = 320, H = 130, ml = 44, mr = 8, mt = 14, mb = 28;
+  const pw = W - ml - mr, ph = H - mt - mb, n = points.length;
+  const vals = points.map(p => p.value);
+  const minV = Math.min(...vals), maxV = Math.max(...vals), range = maxV - minV || 1;
+  const xp = i => ml + i * pw / (n - 1);
+  const yp = v => mt + ph * (1 - (v - minV) / range);
+  const line = points.map((p, i) => `${i ? 'L' : 'M'}${xp(i).toFixed(1)} ${yp(p.value).toFixed(1)}`).join(' ');
+  const area = `${line} L${xp(n-1).toFixed(1)} ${(mt+ph).toFixed(1)} L${xp(0).toFixed(1)} ${(mt+ph).toFixed(1)} Z`;
+  const step = Math.max(1, Math.ceil(n / 5));
+  const gid = 'lg' + title.replace(/\W/g, '');
+  const xlabels = points.map((p, i) => (i % step === 0 || i === n - 1)
+    ? `<text x="${xp(i).toFixed(1)}" y="${H - 4}" class="svg-lbl" text-anchor="middle">${p.label}</text>` : '').join('');
+  const ylabels = [minV, maxV].map(v =>
+    `<text x="${ml - 4}" y="${yp(v).toFixed(1)}" class="svg-lbl" text-anchor="end" dominant-baseline="middle">${v}${unit ? ' ' + unit : ''}</text>`
+  ).join('');
+  const grid = [0, 0.5, 1].map(t =>
+    `<line x1="${ml}" y1="${(mt + ph * (1-t)).toFixed(1)}" x2="${W - mr}" y2="${(mt + ph * (1-t)).toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/>`
+  ).join('');
+  const dots = points.map((p, i) =>
+    `<circle cx="${xp(i).toFixed(1)}" cy="${yp(p.value).toFixed(1)}" r="3" fill="var(--accent)"/>`
+  ).join('');
+  return `
+    <div class="svg-chart-wrap">
+      <div class="svg-chart-title">${title}</div>
+      <svg viewBox="0 0 ${W} ${H}" class="svg-chart" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.25"/>
+            <stop offset="100%" stop-color="var(--accent)" stop-opacity="0.02"/>
+          </linearGradient>
+        </defs>
+        ${grid}
+        <path d="${area}" fill="url(#${gid})"/>
+        <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        ${dots}
+        ${xlabels}
+        ${ylabels}
+      </svg>
+    </div>`;
+}
+
+function buildBarChart(points, title, unit) {
+  if (!points.length) return '';
+  const W = 320, H = 130, ml = 44, mr = 8, mt = 14, mb = 28;
+  const pw = W - ml - mr, ph = H - mt - mb, n = points.length;
+  const maxV = Math.max(...points.map(p => p.value)) || 1;
+  const gap = pw / n;
+  const bw = Math.max(4, gap - 4);
+  const step = Math.max(1, Math.ceil(n / 5));
+  const bars = points.map((p, i) => {
+    const bh = Math.max(p.value > 0 ? 2 : 0, (p.value / maxV) * ph);
+    const x = (ml + gap * i + (gap - bw) / 2).toFixed(1);
+    const y = (mt + ph - bh).toFixed(1);
+    return `<rect x="${x}" y="${y}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="2" fill="var(--accent)" opacity="${p.value > 0 ? '1' : '0.15'}"/>`;
+  }).join('');
+  const xlabels = points.map((p, i) => (i % step === 0 || i === n - 1)
+    ? `<text x="${(ml + gap * i + gap / 2).toFixed(1)}" y="${H - 4}" class="svg-lbl" text-anchor="middle">${p.label}</text>` : '').join('');
+  const grid = [0, 0.5, 1].map(t =>
+    `<line x1="${ml}" y1="${(mt + ph * (1-t)).toFixed(1)}" x2="${W - mr}" y2="${(mt + ph * (1-t)).toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/>`
+  ).join('');
+  const ytop = `<text x="${ml - 4}" y="${mt}" class="svg-lbl" text-anchor="end" dominant-baseline="hanging">${maxV}${unit ? ' ' + unit : ''}</text>`;
+  return `
+    <div class="svg-chart-wrap">
+      <div class="svg-chart-title">${title}</div>
+      <svg viewBox="0 0 ${W} ${H}" class="svg-chart" xmlns="http://www.w3.org/2000/svg">
+        ${grid}
+        ${bars}
+        ${xlabels}
+        ${ytop}
+      </svg>
+    </div>`;
+}
+
+function renderFrequencyChart() {
+  const workouts = Store.workouts();
+  if (!workouts.length) return '';
+  const now = new Date();
+  const weeks = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i * 7);
+    const day = d.getDay();
+    const mon = new Date(d);
+    mon.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+    mon.setHours(0, 0, 0, 0);
+    const sun = new Date(mon);
+    sun.setDate(mon.getDate() + 6);
+    sun.setHours(23, 59, 59, 999);
+    const label = mon.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const count = workouts.filter(w => {
+      const wd = new Date(w.date + 'T00:00:00');
+      return wd >= mon && wd <= sun;
+    }).length;
+    weeks.push({ label, value: count });
+  }
+  return buildBarChart(weeks, 'Workouts per Week', '');
+}
+
+// ── Progress Tab ──────────────────────────────────────────────
+
 function renderProgress() {
   const workouts = Store.workouts();
 
@@ -876,6 +980,8 @@ function renderProgress() {
 
   return `
     <div class="progress-view">
+      ${renderFrequencyChart()}
+      <div class="section-title" style="padding-left:0;margin-top:16px;margin-bottom:8px;">Exercise Progress</div>
       <select class="progress-select" id="progress-select" onchange="renderProgressChart(this.value)">
         ${options}
       </select>
@@ -913,21 +1019,12 @@ function renderProgressChart(exerciseId) {
   }
 
   if (cardio) {
-    // Cardio progress: show longest duration as the PR metric
+    // Cardio progress
     const pr = sessions.reduce((best, s) => s.maxDuration > best.maxDuration ? s : best, sessions[0]);
-    const maxD = Math.max(...sessions.map(s => s.maxDuration)) || 1;
-
-    const chartRows = sessions.map(s => {
-      const pct = Math.round((s.maxDuration / maxD) * 100);
-      const dateShort = new Date(s.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      return `
-        <div class="chart-row">
-          <div class="chart-date">${dateShort}</div>
-          <div class="chart-bar-wrap"><div class="chart-bar" style="width:${pct}%;"></div></div>
-          <div class="chart-val">${s.maxDuration} min</div>
-        </div>`;
-    }).join('');
-
+    const chartPoints = sessions.map(s => ({
+      label: new Date(s.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      value: s.maxDuration
+    }));
     const historyHTML = sessions.slice().reverse().map(s => {
       const setsText = s.sets.map((st, i) => {
         const dist = st.distance > 0 ? ` · ${st.distance} mi` : '';
@@ -939,15 +1036,13 @@ function renderProgressChart(exerciseId) {
           <div class="progress-history-sets">${setsText}</div>
         </div>`;
     }).join('');
-
     contentEl.innerHTML = `
       <div class="pr-badge">
         <div class="pr-badge-label">Longest Session 🏆</div>
         <div class="pr-badge-value">${pr.maxDuration} min</div>
         <div class="pr-badge-sub">${fmtDate(pr.date)}</div>
       </div>
-      <div class="section-title" style="padding-left:0;margin-bottom:8px;">Duration Per Session</div>
-      <div class="progress-chart">${chartRows}</div>
+      ${buildLineChart(chartPoints, 'Duration Per Session', 'min')}
       <div class="section-title" style="padding-left:0;margin-top:16px;margin-bottom:8px;">Session History</div>
       ${historyHTML}`;
 
@@ -955,19 +1050,14 @@ function renderProgressChart(exerciseId) {
     // Strength progress
     const pr = sessions.reduce((best, s) => s.maxWeight > best.maxWeight ? s : best, sessions[0]);
     const prSet = pr.sets.reduce((a,b) => (parseFloat(b.weight) > parseFloat(a.weight) ? b : a));
-    const maxW = Math.max(...sessions.map(s => s.maxWeight)) || 1;
-
-    const chartRows = sessions.map(s => {
-      const pct = Math.round((s.maxWeight / maxW) * 100);
-      const dateShort = new Date(s.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      return `
-        <div class="chart-row">
-          <div class="chart-date">${dateShort}</div>
-          <div class="chart-bar-wrap"><div class="chart-bar" style="width:${pct}%;"></div></div>
-          <div class="chart-val">${s.maxWeight} ${unit}</div>
-        </div>`;
-    }).join('');
-
+    const weightPoints = sessions.map(s => ({
+      label: new Date(s.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      value: s.maxWeight
+    }));
+    const volumePoints = sessions.map(s => ({
+      label: new Date(s.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      value: s.sets.reduce((sum, st) => sum + (parseFloat(st.weight)||0) * (parseInt(st.reps)||0), 0)
+    }));
     const historyHTML = sessions.slice().reverse().map(s => {
       const setsText = s.sets.map((st, i) =>
         `<span>Set ${i+1}: <strong>${st.weight}${unit} × ${st.reps} reps</strong></span>`
@@ -978,14 +1068,11 @@ function renderProgressChart(exerciseId) {
           <div class="progress-history-sets">${setsText}</div>
         </div>`;
     }).join('');
-
-    // Best estimated 1RM across all sessions
     let best1RM = 0;
     sessions.forEach(s => s.sets.forEach(st => {
       const est = calc1RM(parseFloat(st.weight) || 0, parseInt(st.reps) || 0);
       if (est > best1RM) best1RM = est;
     }));
-
     contentEl.innerHTML = `
       <div class="pr-badges-row">
         <div class="pr-badge">
@@ -999,8 +1086,8 @@ function renderProgressChart(exerciseId) {
           <div class="pr-badge-sub">Epley formula</div>
         </div>
       </div>
-      <div class="section-title" style="padding-left:0;margin-bottom:8px;">Max Weight Per Session</div>
-      <div class="progress-chart">${chartRows}</div>
+      ${buildLineChart(weightPoints, 'Max Weight Per Session', unit)}
+      ${buildBarChart(volumePoints, 'Total Volume Per Session', unit)}
       <div class="section-title" style="padding-left:0;margin-top:16px;margin-bottom:8px;">Session History</div>
       ${historyHTML}`;
   }

@@ -1051,3 +1051,31 @@ a      { color: var(--accent); text-decoration: none; }
   flex: 1;
   margin-bottom: 16px;
 }
+
+/* ── SVG Charts ─────────────────────────────────────────────── */
+.svg-chart-wrap {
+  margin: 12px 0;
+}
+.svg-chart-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.svg-chart {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.svg-lbl {
+  font-size: 9px;
+  fill: var(--text-muted);
+  font-family: inherit;
+}
+.chart-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 12px 0;
+}
