@@ -226,8 +226,10 @@ function renderSubCard(s, paid, d) {
         <div class="item-card-name">${escHtml(s.name)}</div>
         <div class="item-card-meta">
           <span class="cat-badge ${categoryClass(s.category)}">${s.category}</span>
+          ${s.autopay ? `&nbsp;<span class="chip-autopay" title="${escAttr(s.autopayInfo || 'Autopay')}">Auto</span>` : ''}
           &nbsp;${cycleLabel(s.cycle)} · Due ${fmtDate(s.nextDue)}
         </div>
+        ${s.autopay && s.autopayInfo ? `<div class="item-card-autopay">${escHtml(s.autopayInfo)}</div>` : ''}
       </div>
       <div class="card-right">
         <div class="item-card-cost">${fmtCost(s.cost)}</div>
@@ -281,8 +283,10 @@ function renderBillCard(b) {
         <div class="item-card-name">${escHtml(b.name)}</div>
         <div class="item-card-meta">
           <span class="cat-badge ${categoryClass(b.category)}">${b.category}</span>
+          ${b.autopay ? `&nbsp;<span class="chip-autopay" title="${escAttr(b.autopayInfo || 'Autopay')}">Auto</span>` : ''}
           &nbsp;${b.recurring ? cycleLabel(recurrLabel(b.recurrMonths)) : 'One-time'} · Due ${fmtDate(b.dueDate)}
         </div>
+        ${b.autopay && b.autopayInfo ? `<div class="item-card-autopay">${escHtml(b.autopayInfo)}</div>` : ''}
       </div>
       <div class="card-right">
         <div class="item-card-cost">${fmtCost(b.amount)}</div>
@@ -395,6 +399,19 @@ function renderModal() {
           <input id="m-nextDue" class="input-field" type="date" value="${data.nextDue || today()}">
         </div>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Autopay?</label>
+          <select id="m-autopay" class="input-field" onchange="toggleAutopayField()">
+            <option value="no" ${!data.autopay ? 'selected' : ''}>No</option>
+            <option value="yes" ${data.autopay ? 'selected' : ''}>Yes</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" id="m-autopay-wrap" style="${data.autopay ? '' : 'display:none'}">
+        <label class="form-label">Payment method</label>
+        <input id="m-autopayInfo" class="input-field" type="text" placeholder="e.g. Chase Visa ending 4242" value="${escAttr(data.autopayInfo || '')}">
+      </div>
       <div class="form-group">
         <label class="form-label">Notes (optional)</label>
         <input id="m-notes" class="input-field" type="text" placeholder="Any notes" value="${escAttr(data.notes || '')}">
@@ -439,6 +456,19 @@ function renderModal() {
         <label class="form-label">Repeats every</label>
         <select id="m-recurrMonths" class="input-field">${recurrOptions}</select>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Autopay?</label>
+          <select id="m-autopay" class="input-field" onchange="toggleAutopayField()">
+            <option value="no" ${!data.autopay ? 'selected' : ''}>No</option>
+            <option value="yes" ${data.autopay ? 'selected' : ''}>Yes</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" id="m-autopay-wrap" style="${data.autopay ? '' : 'display:none'}">
+        <label class="form-label">Payment method</label>
+        <input id="m-autopayInfo" class="input-field" type="text" placeholder="e.g. Chase Visa ending 4242" value="${escAttr(data.autopayInfo || '')}">
+      </div>
       <div class="form-group">
         <label class="form-label">Notes (optional)</label>
         <input id="m-notes" class="input-field" type="text" placeholder="Any notes" value="${escAttr(data.notes || '')}">
@@ -463,6 +493,11 @@ function renderModal() {
 function toggleRecurrField() {
   const el = document.getElementById('m-recurr-wrap');
   if (el) el.style.display = document.getElementById('m-recurring').value === 'yes' ? '' : 'none';
+}
+
+function toggleAutopayField() {
+  const el = document.getElementById('m-autopay-wrap');
+  if (el) el.style.display = document.getElementById('m-autopay').value === 'yes' ? '' : 'none';
 }
 
 /* ── Confirm overlay ───────────────────────────── */
@@ -556,8 +591,10 @@ function saveSubscription() {
   const cycle    = document.getElementById('m-cycle')?.value || 'monthly';
   const category = document.getElementById('m-category')?.value || 'Other';
   const nextDue  = document.getElementById('m-nextDue')?.value || today();
-  const notes    = (document.getElementById('m-notes')?.value || '').trim();
-  const existId  = document.getElementById('m-id')?.value;
+  const notes       = (document.getElementById('m-notes')?.value || '').trim();
+  const autopay     = document.getElementById('m-autopay')?.value === 'yes';
+  const autopayInfo = autopay ? (document.getElementById('m-autopayInfo')?.value || '').trim() : '';
+  const existId     = document.getElementById('m-id')?.value;
 
   if (!name) { alert('Please enter a name.'); return; }
   if (isNaN(cost) || cost < 0) { alert('Please enter a valid cost.'); return; }
@@ -566,10 +603,10 @@ function saveSubscription() {
   if (existId) {
     const i = subs.findIndex(s => s.id === existId);
     if (i !== -1) {
-      subs[i] = { ...subs[i], name, cost, cycle, category, nextDue, notes };
+      subs[i] = { ...subs[i], name, cost, cycle, category, nextDue, notes, autopay, autopayInfo };
     }
   } else {
-    subs.push({ id: uid('sub'), name, cost, cycle, category, nextDue, notes, active: true, paidCycles: {} });
+    subs.push({ id: uid('sub'), name, cost, cycle, category, nextDue, notes, autopay, autopayInfo, active: true, paidCycles: {} });
   }
   Store.saveSubs(subs);
   closeModal();
@@ -604,6 +641,8 @@ function saveBill() {
   const recurring   = document.getElementById('m-recurring')?.value === 'yes';
   const recurrMonths= recurring ? parseInt(document.getElementById('m-recurrMonths')?.value || 1, 10) : null;
   const notes       = (document.getElementById('m-notes')?.value || '').trim();
+  const autopay     = document.getElementById('m-autopay')?.value === 'yes';
+  const autopayInfo = autopay ? (document.getElementById('m-autopayInfo')?.value || '').trim() : '';
   const existId     = document.getElementById('m-id')?.value;
 
   if (!name) { alert('Please enter a name.'); return; }
@@ -613,10 +652,10 @@ function saveBill() {
   if (existId) {
     const i = bills.findIndex(b => b.id === existId);
     if (i !== -1) {
-      bills[i] = { ...bills[i], name, amount, dueDate, category, recurring, recurrMonths, notes };
+      bills[i] = { ...bills[i], name, amount, dueDate, category, recurring, recurrMonths, notes, autopay, autopayInfo };
     }
   } else {
-    bills.push({ id: uid('bill'), name, amount, dueDate, category, recurring, recurrMonths, notes, paid: false });
+    bills.push({ id: uid('bill'), name, amount, dueDate, category, recurring, recurrMonths, notes, autopay, autopayInfo, paid: false });
   }
   Store.saveBills(bills);
   closeModal();

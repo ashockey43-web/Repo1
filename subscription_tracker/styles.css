@@ -458,6 +458,25 @@ select.input-field {
 .settings-row-label { font-size: 0.9rem; font-weight: 500; }
 .settings-row-sub   { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
 
+/* ── Autopay badge & info ──────────────────────── */
+.chip-autopay {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 20px;
+  background: rgba(76,175,130,0.18);
+  color: var(--success);
+  letter-spacing: 0.03em;
+}
+
+.item-card-autopay {
+  font-size: 0.73rem;
+  color: var(--success);
+  margin-top: 4px;
+  opacity: 0.85;
+}
+
 /* ── Mark paid button ──────────────────────────── */
 .btn-mark-paid {
   background: var(--accent-dim);
