@@ -124,7 +124,7 @@ function getDueSoon(days) {
     if (!b.paid) {
       const d = daysUntil(b.dueDate);
       if (d <= cutoff) {
-        items.push({ type: 'bill', name: b.name, amount: b.amount, date: b.dueDate, days: d, paid: b.paid, id: b.id, cat: b.category, recurring: b.recurring });
+        items.push({ type: 'bill', name: b.name, amount: b.amount, date: b.dueDate, days: d, paid: b.paid, id: b.id, cat: b.category, recurring: b.recurring, variable: b.variableAmount });
       }
     }
   });
@@ -169,7 +169,7 @@ function renderDashboard() {
         ? '<span class="chip chip-paid">Paid ✓</span>'
         : urgencyChip(item.date);
       const markBtn = !item.paid
-        ? `<button class="btn-mark-paid" onclick="${item.type === 'sub' ? 'toggleSubPaid' : 'toggleBillPaid'}('${item.id}')">Mark Paid</button>`
+        ? `<button class="btn-mark-paid" onclick="${item.type === 'sub' ? `toggleSubPaid('${item.id}')` : (item.variable ? `openPayVariable('${item.id}')` : `toggleBillPaid('${item.id}')`)}">Mark Paid</button>`
         : '';
       html += `
         <div class="due-item">
@@ -284,14 +284,15 @@ function renderBillCard(b) {
         <div class="item-card-meta">
           <span class="cat-badge ${categoryClass(b.category)}">${b.category}</span>
           ${b.autopay ? `&nbsp;<span class="chip-autopay" title="${escAttr(b.autopayInfo || 'Autopay')}">Auto</span>` : ''}
+          ${b.variableAmount ? '&nbsp;<span class="chip-variable">Variable</span>' : ''}
           &nbsp;${b.recurring ? cycleLabel(recurrLabel(b.recurrMonths)) : 'One-time'} · Due ${fmtDate(b.dueDate)}
         </div>
         ${b.autopay && b.autopayInfo ? `<div class="item-card-autopay">${escHtml(b.autopayInfo)}</div>` : ''}
       </div>
       <div class="card-right">
-        <div class="item-card-cost">${fmtCost(b.amount)}</div>
+        <div class="item-card-cost">${b.variableAmount ? '<span class="cost-tilde">~</span>' : ''}${fmtCost(b.amount)}</div>
         ${paidChip}
-        <button class="btn-mark-paid${b.paid ? ' paid' : ''}" onclick="toggleBillPaid('${b.id}')">
+        <button class="btn-mark-paid${b.paid ? ' paid' : ''}" onclick="${b.variableAmount && !b.paid ? `openPayVariable('${b.id}')` : `toggleBillPaid('${b.id}')`}">
           ${b.paid ? 'Paid ✓' : 'Mark Paid'}
         </button>
         <div class="item-card-actions">
@@ -360,6 +361,28 @@ function renderModal() {
   const isSub  = type === 'addSub'  || type === 'editSub';
   const isBill = type === 'addBill' || type === 'editBill';
   const isEdit = type === 'editSub' || type === 'editBill';
+
+  if (type === 'payVariable') {
+    return `
+      <div class="modal-overlay" onclick="overlayClose(event)">
+        <div class="modal-sheet">
+          <div class="modal-handle"></div>
+          <div class="modal-title">Enter this month's amount</div>
+          <div class="form-group">
+            <label class="form-label">Amount ($)</label>
+            <input id="m-var-amount" class="input-field" type="number" step="0.01" min="0"
+              placeholder="0.00" value="${data.amount || ''}" autofocus>
+          </div>
+          <p style="font-size:0.8rem;color:var(--muted);margin-bottom:4px">
+            Last amount: ${fmtCost(data.amount || 0)}
+          </p>
+          <div class="modal-actions">
+            <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+            <button class="btn-primary" onclick="saveVariablePayment('${data.id}')">Mark Paid</button>
+          </div>
+        </div>
+      </div>`;
+  }
   const title  = isEdit ? (isSub ? 'Edit Subscription' : 'Edit Bill') : (isSub ? 'New Subscription' : 'New Bill');
   const onSave = isSub ? 'saveSubscription()' : 'saveBill()';
 
@@ -455,6 +478,13 @@ function renderModal() {
       <div class="form-group" id="m-recurr-wrap" style="${data.recurring ? '' : 'display:none'}">
         <label class="form-label">Repeats every</label>
         <select id="m-recurrMonths" class="input-field">${recurrOptions}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Amount type</label>
+        <select id="m-variableAmount" class="input-field">
+          <option value="no"  ${!data.variableAmount ? 'selected' : ''}>Fixed — same every time</option>
+          <option value="yes" ${data.variableAmount  ? 'selected' : ''}>Variable — changes each cycle (e.g. Electric)</option>
+        </select>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -638,12 +668,13 @@ function saveBill() {
   const amount      = parseFloat(document.getElementById('m-amount')?.value || 0);
   const dueDate     = document.getElementById('m-dueDate')?.value || today();
   const category    = document.getElementById('m-category')?.value || 'Other';
-  const recurring   = document.getElementById('m-recurring')?.value === 'yes';
-  const recurrMonths= recurring ? parseInt(document.getElementById('m-recurrMonths')?.value || 1, 10) : null;
-  const notes       = (document.getElementById('m-notes')?.value || '').trim();
-  const autopay     = document.getElementById('m-autopay')?.value === 'yes';
-  const autopayInfo = autopay ? (document.getElementById('m-autopayInfo')?.value || '').trim() : '';
-  const existId     = document.getElementById('m-id')?.value;
+  const recurring      = document.getElementById('m-recurring')?.value === 'yes';
+  const recurrMonths   = recurring ? parseInt(document.getElementById('m-recurrMonths')?.value || 1, 10) : null;
+  const variableAmount = document.getElementById('m-variableAmount')?.value === 'yes';
+  const notes          = (document.getElementById('m-notes')?.value || '').trim();
+  const autopay        = document.getElementById('m-autopay')?.value === 'yes';
+  const autopayInfo    = autopay ? (document.getElementById('m-autopayInfo')?.value || '').trim() : '';
+  const existId        = document.getElementById('m-id')?.value;
 
   if (!name) { alert('Please enter a name.'); return; }
   if (isNaN(amount) || amount < 0) { alert('Please enter a valid amount.'); return; }
@@ -652,10 +683,31 @@ function saveBill() {
   if (existId) {
     const i = bills.findIndex(b => b.id === existId);
     if (i !== -1) {
-      bills[i] = { ...bills[i], name, amount, dueDate, category, recurring, recurrMonths, notes, autopay, autopayInfo };
+      bills[i] = { ...bills[i], name, amount, dueDate, category, recurring, recurrMonths, variableAmount, notes, autopay, autopayInfo };
     }
   } else {
-    bills.push({ id: uid('bill'), name, amount, dueDate, category, recurring, recurrMonths, notes, autopay, autopayInfo, paid: false });
+    bills.push({ id: uid('bill'), name, amount, dueDate, category, recurring, recurrMonths, variableAmount, notes, autopay, autopayInfo, paid: false });
+  }
+  Store.saveBills(bills);
+  closeModal();
+}
+
+function openPayVariable(id) {
+  const bill = Store.bills().find(b => b.id === id);
+  if (bill) openModal('payVariable', bill);
+}
+
+function saveVariablePayment(id) {
+  const newAmount = parseFloat(document.getElementById('m-var-amount')?.value || 0);
+  if (isNaN(newAmount) || newAmount < 0) { alert('Please enter a valid amount.'); return; }
+  const bills = Store.bills();
+  const bill  = bills.find(b => b.id === id);
+  if (!bill) return;
+  bill.amount = newAmount;
+  if (bill.recurring && bill.recurrMonths) {
+    bill.dueDate = advanceDate(bill.dueDate, bill.recurrMonths);
+  } else {
+    bill.paid = true;
   }
   Store.saveBills(bills);
   closeModal();

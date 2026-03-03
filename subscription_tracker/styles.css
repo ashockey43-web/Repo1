@@ -546,6 +546,26 @@ select.input-field {
 .settings-row-label { font-size: 0.9rem; font-weight: 600; }
 .settings-row-sub   { font-size: 0.74rem; color: var(--muted); margin-top: 2px; }
 
+/* ── Variable amount badge ─────────────────────── */
+.chip-variable {
+  display: inline-block;
+  font-size: 0.63rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: rgba(251,191,36,0.14);
+  color: var(--warn);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cost-tilde {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+  margin-right: 1px;
+}
+
 /* ── Autopay badge & info ──────────────────────── */
 .chip-autopay {
   display: inline-block;
