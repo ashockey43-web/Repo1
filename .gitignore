@@ -1,0 +1,14 @@
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor folders
+.vscode/
+.idea/
+
+# If you ever add Node/npm tooling in the future
+node_modules/
+dist/
+.env
+.env.local
