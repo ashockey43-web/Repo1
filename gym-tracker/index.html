@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+
+  <!-- PWA meta tags -->
+  <meta name="theme-color" content="#0d0d0d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="GymTracker">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="description" content="Track your gym workouts, log sets and reps, and see your progress over time.">
+
+  <title>GymTracker</title>
+
+  <!-- PWA manifest + icons -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.svg">
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- App content is rendered here by JavaScript -->
+  <div id="app"></div>
+
+  <!-- Bottom navigation (always visible) -->
+  <nav id="bottom-nav">
+    <button class="nav-btn active" data-view="home">
+      <span class="nav-icon">🏠</span>
+      <span>Home</span>
+    </button>
+    <button class="nav-btn" data-view="workout">
+      <span class="nav-icon">💪</span>
+      <span>Workout</span>
+    </button>
+    <button class="nav-btn" data-view="history">
+      <span class="nav-icon">📋</span>
+      <span>History</span>
+    </button>
+    <button class="nav-btn" data-view="progress">
+      <span class="nav-icon">📈</span>
+      <span>Progress</span>
+    </button>
+  </nav>
+
+  <!-- Exercise database must load before app.js -->
+  <script src="exercises.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
