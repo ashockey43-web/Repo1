@@ -128,7 +128,7 @@ function renderApp() {
       }
       break;
     case 'history':  el.innerHTML = renderHistory(); break;
-    case 'progress': el.innerHTML = renderProgress(); break;
+    case 'stats':    el.innerHTML = renderStats();   break;
   }
 }
 
@@ -761,10 +761,47 @@ function deleteWorkout(id) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// PROGRESS VIEW
+// STATS VIEW (Exercise Progress + Body Measurements)
 // ══════════════════════════════════════════════════════════════
+
+// Which sub-tab is active: 'progress' | 'measurements'
+App.statsTab = 'progress';
+
+function renderStats() {
+  App.statsTab = App.statsTab || 'progress';
+  const progressActive = App.statsTab === 'progress';
+  return `
+    <div>
+      <div class="page-header"><div class="page-title">Stats</div></div>
+      <div class="stats-tabs">
+        <button class="stats-tab ${progressActive ? 'active' : ''}"
+                onclick="switchStatsTab('progress')">Exercise Progress</button>
+        <button class="stats-tab ${!progressActive ? 'active' : ''}"
+                onclick="switchStatsTab('measurements')">Body Measurements</button>
+      </div>
+      <div id="stats-content">
+        ${progressActive ? renderProgress() : renderMeasurements()}
+      </div>
+    </div>`;
+}
+
+function switchStatsTab(tab) {
+  App.statsTab = tab;
+  const el = document.getElementById('stats-content');
+  if (!el) return;
+  el.innerHTML = tab === 'progress' ? renderProgress() : renderMeasurements();
+  // Update tab button styles
+  document.querySelectorAll('.stats-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent.toLowerCase().includes(tab === 'progress' ? 'exercise' : 'body'));
+  });
+  // Auto-populate charts
+  const pSel = document.getElementById('progress-select');
+  if (pSel) renderProgressChart(pSel.value);
+  const mSel = document.getElementById('measurement-metric');
+  if (mSel) renderMeasurementChart(mSel.value);
+}
+
 function renderProgress() {
-  const unit = Store.settings().unit || 'lbs';
   const workouts = Store.workouts();
 
   // Build list of all exercises that have been logged
@@ -778,35 +815,22 @@ function renderProgress() {
   });
 
   if (!logged.size) {
-    return `
-      <div class="progress-view">
-        <div class="page-header" style="position:static;margin-bottom:16px;">
-          <div class="page-title">Progress</div>
-        </div>
-        <div class="empty-state">
-          Complete some workouts first to see your progress here! 📈
-        </div>
-      </div>`;
+    return `<div class="empty-state" style="margin-top:40px;">
+      Complete some workouts first to see your progress here! 📈
+    </div>`;
   }
 
   const options = [...logged.entries()].map(([id, name]) =>
     `<option value="${id}">${name}</option>`
   ).join('');
 
-  // Default: show first logged exercise
-  const firstId = [...logged.keys()][0];
-
   return `
     <div class="progress-view">
-      <div class="page-header" style="position:static;margin-bottom:16px;">
-        <div class="page-title">Progress</div>
-      </div>
       <select class="progress-select" id="progress-select" onchange="renderProgressChart(this.value)">
         ${options}
       </select>
       <div id="progress-content"></div>
     </div>`;
-  // After rendering, populate the chart
 }
 
 function renderProgressChart(exerciseId) {
@@ -919,6 +943,182 @@ function renderProgressChart(exerciseId) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// BODY MEASUREMENTS
+// ══════════════════════════════════════════════════════════════
+
+const MEASUREMENT_FIELDS = [
+  { key: 'bodyWeight', label: 'Body Weight', unit: 'lbs' },
+  { key: 'chest',      label: 'Chest',       unit: 'in'  },
+  { key: 'waist',      label: 'Waist',       unit: 'in'  },
+  { key: 'hips',       label: 'Hips',        unit: 'in'  },
+  { key: 'bicep',      label: 'Bicep',       unit: 'in'  },
+  { key: 'thigh',      label: 'Thigh',       unit: 'in'  },
+  { key: 'neck',       label: 'Neck',        unit: 'in'  },
+  { key: 'bodyFat',    label: 'Body Fat',    unit: '%'   },
+];
+
+function getMeasurements() {
+  return JSON.parse(localStorage.getItem('gt_measurements') || '[]');
+}
+function saveMeasurements(arr) {
+  localStorage.setItem('gt_measurements', JSON.stringify(arr));
+}
+
+function renderMeasurements() {
+  const measurements = getMeasurements().slice().reverse();
+  const unit = Store.settings().unit || 'lbs';
+
+  const formFields = MEASUREMENT_FIELDS.map(f => {
+    const displayUnit = f.key === 'bodyWeight' ? unit : f.unit;
+    return `
+      <div class="meas-field">
+        <div class="meas-field-label">${f.label}<span class="meas-unit">${displayUnit}</span></div>
+        <input class="meas-input" type="number" id="mf-${f.key}" min="0" step="0.1" placeholder="—">
+      </div>`;
+  }).join('');
+
+  // Chart: only show if there's data with at least one field recorded
+  const hasData = measurements.length > 0;
+  const chartOptions = MEASUREMENT_FIELDS.map(f =>
+    `<option value="${f.key}">${f.label}</option>`
+  ).join('');
+
+  const historyHTML = measurements.length ? measurements.map((m, i) => {
+    const fields = MEASUREMENT_FIELDS
+      .filter(f => m[f.key] != null && m[f.key] !== '')
+      .map(f => {
+        const displayUnit = f.key === 'bodyWeight' ? unit : f.unit;
+        return `<span class="meas-hist-item"><strong>${f.label}:</strong> ${m[f.key]} ${displayUnit}</span>`;
+      }).join('');
+    return `
+      <div class="meas-history-card" id="mhist-${i}">
+        <div class="meas-history-header" onclick="toggleMeasHistory(${i})">
+          <div>
+            <div class="meas-history-date">${fmtDate(m.date)}</div>
+            ${m.bodyWeight ? `<div class="meas-history-weight">${m.bodyWeight} ${unit}</div>` : ''}
+          </div>
+          <div class="history-chevron">›</div>
+        </div>
+        <div class="meas-history-detail">
+          <div class="meas-hist-fields">${fields || 'No data recorded'}</div>
+          <button class="btn btn-danger btn-sm" style="margin-top:10px;"
+                  onclick="deleteMeasurement('${m.id}')">Delete</button>
+        </div>
+      </div>`;
+  }).join('') : '<div class="empty-state" style="padding:24px 0;">No measurements recorded yet.</div>';
+
+  return `
+    <div class="progress-view">
+      <div class="meas-form card">
+        <div style="font-weight:700;font-size:15px;margin-bottom:12px;">Log Today's Measurements</div>
+        <div style="margin-bottom:10px;">
+          <div class="meas-field-label">Date</div>
+          <input class="input-field" type="date" id="mf-date" value="${today()}">
+        </div>
+        <div class="meas-grid">${formFields}</div>
+        <button class="btn btn-primary" style="margin-top:14px;" onclick="saveMeasurement()">
+          Save Measurements
+        </button>
+      </div>
+
+      ${hasData ? `
+        <div class="section-title" style="padding-left:0;margin-bottom:8px;">Progress Chart</div>
+        <select class="progress-select" id="measurement-metric" onchange="renderMeasurementChart(this.value)">
+          ${chartOptions}
+        </select>
+        <div id="measurement-chart"></div>
+      ` : ''}
+
+      <div class="section-title" style="padding-left:0;margin-top:16px;margin-bottom:8px;">History</div>
+      ${historyHTML}
+    </div>`;
+}
+
+function saveMeasurement() {
+  const dateEl = document.getElementById('mf-date');
+  if (!dateEl || !dateEl.value) { alert('Please enter a date.'); return; }
+
+  const entry = { id: uid(), date: dateEl.value };
+  let hasAny = false;
+  MEASUREMENT_FIELDS.forEach(f => {
+    const el = document.getElementById(`mf-${f.key}`);
+    if (el && el.value !== '') {
+      entry[f.key] = parseFloat(el.value);
+      hasAny = true;
+    }
+  });
+
+  if (!hasAny) { alert('Enter at least one measurement before saving.'); return; }
+
+  const all = getMeasurements();
+  all.push(entry);
+  saveMeasurements(all);
+
+  // Re-render the measurements tab
+  const el = document.getElementById('stats-content');
+  if (el) el.innerHTML = renderMeasurements();
+  const mSel = document.getElementById('measurement-metric');
+  if (mSel) renderMeasurementChart(mSel.value);
+}
+
+function deleteMeasurement(id) {
+  if (!confirm('Delete this measurement entry?')) return;
+  saveMeasurements(getMeasurements().filter(m => m.id !== id));
+  const el = document.getElementById('stats-content');
+  if (el) el.innerHTML = renderMeasurements();
+}
+
+function toggleMeasHistory(i) {
+  const el = document.getElementById(`mhist-${i}`);
+  if (el) el.classList.toggle('open');
+}
+
+function renderMeasurementChart(metricKey) {
+  const unit = Store.settings().unit || 'lbs';
+  const el = document.getElementById('measurement-chart');
+  if (!el) return;
+
+  const field = MEASUREMENT_FIELDS.find(f => f.key === metricKey);
+  if (!field) return;
+
+  const displayUnit = metricKey === 'bodyWeight' ? unit : field.unit;
+
+  const data = getMeasurements()
+    .filter(m => m[metricKey] != null && m[metricKey] !== '')
+    .map(m => ({ date: m.date, val: parseFloat(m[metricKey]) }));
+
+  if (!data.length) {
+    el.innerHTML = '<div class="progress-no-data">No data for this measurement yet.</div>';
+    return;
+  }
+
+  const maxVal = Math.max(...data.map(d => d.val)) || 1;
+  const latest = data[data.length - 1];
+  const first  = data[0];
+  const change = latest.val - first.val;
+  const changeStr = (change >= 0 ? '+' : '') + change.toFixed(1);
+
+  const chartRows = data.map(d => {
+    const pct = Math.round((d.val / maxVal) * 100);
+    const dateShort = new Date(d.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return `
+      <div class="chart-row">
+        <div class="chart-date">${dateShort}</div>
+        <div class="chart-bar-wrap"><div class="chart-bar" style="width:${pct}%;"></div></div>
+        <div class="chart-val">${d.val} ${displayUnit}</div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="pr-badge" style="margin-bottom:12px;">
+      <div class="pr-badge-label">Latest · ${fmtDate(latest.date)}</div>
+      <div class="pr-badge-value">${latest.val} ${displayUnit}</div>
+      <div class="pr-badge-sub">Change from first: ${changeStr} ${displayUnit}</div>
+    </div>
+    <div class="progress-chart">${chartRows}</div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
 // SETTINGS
 // ══════════════════════════════════════════════════════════════
 function openSettings() {
@@ -1007,12 +1207,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Auto-populate progress chart when progress tab opens
+  // Auto-populate charts when stats tab opens
   const observer = new MutationObserver(() => {
-    const sel = document.getElementById('progress-select');
-    const content = document.getElementById('progress-content');
-    if (sel && content && content.innerHTML === '') {
-      renderProgressChart(sel.value);
+    const pSel = document.getElementById('progress-select');
+    const pContent = document.getElementById('progress-content');
+    if (pSel && pContent && pContent.innerHTML === '') {
+      renderProgressChart(pSel.value);
+    }
+    const mSel = document.getElementById('measurement-metric');
+    const mContent = document.getElementById('measurement-chart');
+    if (mSel && mContent && mContent.innerHTML === '') {
+      renderMeasurementChart(mSel.value);
     }
   });
   observer.observe(document.getElementById('app'), { childList: true, subtree: false });

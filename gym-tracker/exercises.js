@@ -809,7 +809,7 @@ const EXERCISES = [
     name: "Treadmill Run",
     muscle: "Cardiovascular",
     secondary: ["Legs", "Core"],
-    equipment: ["machine"],
+    equipment: ["cardio_machine"],
     category: "Cardio",
     type: "cardio",
     instructions: "Set your speed and incline. Start with a 2-3 min warmup walk. Log duration and distance when done."
@@ -829,7 +829,7 @@ const EXERCISES = [
     name: "Stationary Bike",
     muscle: "Cardiovascular",
     secondary: ["Legs"],
-    equipment: ["machine"],
+    equipment: ["cardio_machine"],
     category: "Cardio",
     type: "cardio",
     instructions: "Set resistance level. Adjust seat so leg is nearly straight at bottom of pedal stroke. Good low-impact cardio."
@@ -839,7 +839,7 @@ const EXERCISES = [
     name: "Rowing Machine",
     muscle: "Cardiovascular",
     secondary: ["Back", "Arms", "Legs"],
-    equipment: ["machine"],
+    equipment: ["cardio_machine"],
     category: "Cardio",
     type: "cardio",
     instructions: "Drive with legs first, then lean back, then pull arms to chest. Reverse order on return. Excellent full-body cardio."
@@ -849,7 +849,7 @@ const EXERCISES = [
     name: "Elliptical",
     muscle: "Cardiovascular",
     secondary: ["Legs", "Core"],
-    equipment: ["machine"],
+    equipment: ["cardio_machine"],
     category: "Cardio",
     type: "cardio",
     instructions: "Set resistance and incline. Push and pull the handles to engage upper body. Low-impact and easy on joints."
@@ -859,7 +859,7 @@ const EXERCISES = [
     name: "Stair Climber",
     muscle: "Cardiovascular",
     secondary: ["Glutes", "Legs"],
-    equipment: ["machine"],
+    equipment: ["cardio_machine"],
     category: "Cardio",
     type: "cardio",
     instructions: "Set a manageable pace. Don't lean too heavily on the rails — let your legs do the work. Great for glutes."
@@ -894,6 +894,7 @@ const ALL_EQUIPMENT = [
   { id: "barbell",         label: "Barbell + Rack",    icon: "BB" },
   { id: "cables",          label: "Cable Machine",     icon: "CA" },
   { id: "machine",         label: "Weight Machines",   icon: "MC" },
+  { id: "cardio_machine",  label: "Cardio Machines",   icon: "CV" },
   { id: "kettlebell",      label: "Kettlebell",        icon: "KB" },
   { id: "resistance_bands",label: "Resistance Bands",  icon: "RB" },
   { id: "pullup_bar",      label: "Pull-up Bar",       icon: "PB" },
