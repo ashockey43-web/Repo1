@@ -268,7 +268,7 @@ function goToExerciseSelect() {
   // Filter exercises: an exercise is available if ALL its required
   // equipment is in selectedEquip (empty array = always available)
   const available = EXERCISES.filter(ex =>
-    ex.equipment.every(e => App.selectedEquip.has(e))
+    (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
   );
 
   // Auto-suggest a balanced workout
@@ -361,7 +361,7 @@ function toggleExercise(id) {
     App.selectedExIds.push(id);
   }
   const available = EXERCISES.filter(ex =>
-    ex.equipment.every(e => App.selectedEquip.has(e))
+    (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
   );
   document.getElementById('app').innerHTML = renderExerciseSelect(available);
 }
@@ -369,7 +369,7 @@ function toggleExercise(id) {
 function selectAll(ids) {
   App.selectedExIds = [...ids];
   const available = EXERCISES.filter(ex =>
-    ex.equipment.every(e => App.selectedEquip.has(e))
+    (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
   );
   document.getElementById('app').innerHTML = renderExerciseSelect(available);
 }
@@ -377,7 +377,7 @@ function selectAll(ids) {
 function clearAll() {
   App.selectedExIds = [];
   const available = EXERCISES.filter(ex =>
-    ex.equipment.every(e => App.selectedEquip.has(e))
+    (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
   );
   document.getElementById('app').innerHTML = renderExerciseSelect(available);
 }
