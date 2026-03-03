@@ -13,8 +13,9 @@ const App = {
   settingsOpen: false,
   restTimerEnd: null,    // timestamp when rest timer ends
   restTimerInterval: null, // setInterval handle for rest timer
-  plateBarWeight: 45,    // selected bar weight for plate calculator
-  exGroupBy: 'muscle',   // exercise select grouping: 'muscle' | 'equipment'
+  plateBarWeight: 45,      // selected bar weight for plate calculator
+  equipSelectMode: 'equipment', // 'equipment' | 'muscle'
+  selectedMuscles: new Set(),   // selected muscle groups when in muscle mode
 };
 
 // ── Storage helpers ────────────────────────────────────────────
@@ -260,21 +261,49 @@ function startWorkoutFlow() {
   document.getElementById('app').innerHTML = renderEquipmentSetup();
 }
 
+const MUSCLE_GROUPS = [
+  { id: 'Chest',     icon: '🫁' },
+  { id: 'Back',      icon: '🔙' },
+  { id: 'Shoulders', icon: '🏋️' },
+  { id: 'Biceps',    icon: '💪' },
+  { id: 'Triceps',   icon: '🦾' },
+  { id: 'Legs',      icon: '🦵' },
+  { id: 'Core',      icon: '🎯' },
+  { id: 'Cardio',    icon: '❤️' },
+];
+
 function renderEquipmentSetup() {
-  const cards = ALL_EQUIPMENT.map(eq => `
+  const mode = App.equipSelectMode || 'equipment';
+
+  const equipCards = ALL_EQUIPMENT.map(eq => `
     <div class="eq-card ${App.selectedEquip.has(eq.id) ? 'selected' : ''}"
          onclick="toggleEquip('${eq.id}')">
       <div class="eq-icon">${eq.icon}</div>
       <div class="eq-label">${eq.label}</div>
     </div>`).join('');
 
+  const muscleCards = MUSCLE_GROUPS.map(mg => `
+    <div class="eq-card ${App.selectedMuscles.has(mg.id) ? 'selected' : ''}"
+         onclick="toggleMuscleGroup('${mg.id}')">
+      <div class="eq-icon">${mg.icon}</div>
+      <div class="eq-label">${mg.id}</div>
+    </div>`).join('');
+
+  const subtitle = mode === 'equipment'
+    ? 'Select all equipment you have access to today.'
+    : 'Select the muscle groups you want to train today.';
+
   return `
     <div class="setup-view">
       <div class="setup-header">
         <h2>What's available?</h2>
-        <p>Select all equipment you have access to today.</p>
+        <p>${subtitle}</p>
       </div>
-      <div class="equipment-grid">${cards}</div>
+      <div style="padding:0 16px 12px; display:flex; gap:6px;">
+        <button class="btn btn-sm ${mode === 'equipment' ? 'btn-primary' : 'btn-ghost'}" onclick="setEquipSelectMode('equipment')">By Equipment</button>
+        <button class="btn btn-sm ${mode === 'muscle' ? 'btn-primary' : 'btn-ghost'}" onclick="setEquipSelectMode('muscle')">By Muscle Group</button>
+      </div>
+      <div class="equipment-grid">${mode === 'equipment' ? equipCards : muscleCards}</div>
       <div style="height:80px;"></div>
       <div class="setup-footer">
         <button class="btn btn-primary" onclick="goToExerciseSelect()">
@@ -293,15 +322,34 @@ function toggleEquip(id) {
   document.getElementById('app').innerHTML = renderEquipmentSetup();
 }
 
+function setEquipSelectMode(mode) {
+  App.equipSelectMode = mode;
+  document.getElementById('app').innerHTML = renderEquipmentSetup();
+}
+
+function toggleMuscleGroup(cat) {
+  if (App.selectedMuscles.has(cat)) {
+    App.selectedMuscles.delete(cat);
+  } else {
+    App.selectedMuscles.add(cat);
+  }
+  document.getElementById('app').innerHTML = renderEquipmentSetup();
+}
+
+function getAvailableExercises() {
+  if ((App.equipSelectMode || 'equipment') === 'muscle') {
+    return getAllExercises().filter(ex => App.selectedMuscles.has(ex.category));
+  }
+  return getAllExercises().filter(ex =>
+    (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
+  );
+}
+
 // ── Exercise Selection ─────────────────────────────────────────
 function goToExerciseSelect() {
   App.workoutStep = 'exercises';
 
-  // Filter exercises: an exercise is available if ALL its required
-  // equipment is in selectedEquip (empty array = always available)
-  const available = getAllExercises().filter(ex =>
-    (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
-  );
+  const available = getAvailableExercises();
 
   // Auto-suggest a balanced workout
   if (App.selectedExIds.length === 0) {
@@ -322,31 +370,14 @@ function autoSuggest(available) {
 }
 
 function renderExerciseSelect(available) {
-  const groupBy = App.exGroupBy || 'muscle';
-
-  // Build groups
+  // Group by muscle category
   const groups = {};
-  if (groupBy === 'muscle') {
-    available.forEach(ex => {
-      const key = ex.category;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(ex);
-    });
-  } else {
-    // Group by primary equipment
-    const equipLabel = {};
-    ALL_EQUIPMENT.forEach(e => { equipLabel[e.id] = e.label; });
-    available.forEach(ex => {
-      const key = ex.equipment.length === 0 ? 'Bodyweight' : (equipLabel[ex.equipment[0]] || ex.equipment[0]);
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(ex);
-    });
-  }
+  available.forEach(ex => {
+    if (!groups[ex.category]) groups[ex.category] = [];
+    groups[ex.category].push(ex);
+  });
 
-  const catOrder = groupBy === 'muscle'
-    ? ['Chest','Back','Shoulders','Biceps','Triceps','Legs','Core','Cardio']
-    : ALL_EQUIPMENT.map(e => e.label).concat(['Bodyweight']);
-
+  const catOrder = ['Chest','Back','Shoulders','Biceps','Triceps','Legs','Core','Cardio'];
   const sortedKeys = catOrder.filter(c => groups[c]).concat(
     Object.keys(groups).filter(c => !catOrder.includes(c))
   );
@@ -384,11 +415,6 @@ function renderExerciseSelect(available) {
         <button class="btn btn-ghost btn-sm" onclick="openAddExerciseFromSelect()">+ Add Exercise</button>
       </div>
 
-      <div style="padding:0 16px 10px; display:flex; gap:6px;">
-        <button class="btn btn-sm ${groupBy === 'muscle' ? 'btn-primary' : 'btn-ghost'}" onclick="setExGroupBy('muscle')">By Muscle</button>
-        <button class="btn btn-sm ${groupBy === 'equipment' ? 'btn-primary' : 'btn-ghost'}" onclick="setExGroupBy('equipment')">By Equipment</button>
-      </div>
-
       <div style="padding-bottom: 80px;">
         ${groupsHTML}
       </div>
@@ -405,31 +431,19 @@ function renderExerciseSelect(available) {
 
 function toggleExercise(id) {
   const idx = App.selectedExIds.indexOf(id);
-  if (idx >= 0) {
-    App.selectedExIds.splice(idx, 1);
-  } else {
-    App.selectedExIds.push(id);
-  }
-  const available = getAllExercises().filter(ex =>
-    (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
-  );
-  document.getElementById('app').innerHTML = renderExerciseSelect(available);
+  if (idx >= 0) App.selectedExIds.splice(idx, 1);
+  else App.selectedExIds.push(id);
+  document.getElementById('app').innerHTML = renderExerciseSelect(getAvailableExercises());
 }
 
 function selectAll(ids) {
   App.selectedExIds = [...ids];
-  const available = getAllExercises().filter(ex =>
-    (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
-  );
-  document.getElementById('app').innerHTML = renderExerciseSelect(available);
+  document.getElementById('app').innerHTML = renderExerciseSelect(getAvailableExercises());
 }
 
 function clearAll() {
   App.selectedExIds = [];
-  const available = getAllExercises().filter(ex =>
-    (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
-  );
-  document.getElementById('app').innerHTML = renderExerciseSelect(available);
+  document.getElementById('app').innerHTML = renderExerciseSelect(getAvailableExercises());
 }
 
 function setExGroupBy(mode) {
