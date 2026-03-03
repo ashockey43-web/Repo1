@@ -927,3 +927,127 @@ a      { color: var(--accent); text-decoration: none; }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* ── Routines (home) ─────────────────────────────────────────── */
+.routines-scroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 0 16px 12px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.routines-scroll::-webkit-scrollbar { display: none; }
+
+.routine-card {
+  flex: 0 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.routine-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+}
+.routine-meta { font-size: 12px; color: var(--text-dim); }
+.routine-actions { display: flex; gap: 6px; margin-top: 4px; }
+
+/* ── Log form row (plate calc button) ───────────────────────── */
+.log-form-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.log-form-row .log-set-btn { flex: 1; margin-top: 0; }
+.plates-btn { white-space: nowrap; }
+
+/* ── Rest timer overlay ──────────────────────────────────────── */
+.rest-timer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.rest-timer-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  width: min(320px, 90vw);
+  text-align: center;
+}
+.rest-timer-label {
+  font-size: 13px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-bottom: 8px;
+}
+.rest-timer-count {
+  font-size: 64px;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+  margin-bottom: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.rest-timer-presets {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+/* ── Plate calculator overlay ────────────────────────────────── */
+.plate-calc-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.plate-calc-sheet {
+  background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+  width: 100%;
+  max-width: 480px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.plate-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.plate-row:last-child { border-bottom: none; }
+.plate-label { font-weight: 700; font-size: 15px; }
+.plate-count { color: var(--accent); font-weight: 700; font-size: 15px; }
+
+/* ── 1RM badge row ───────────────────────────────────────────── */
+.pr-badges-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 0;
+}
+.pr-badges-row .pr-badge {
+  flex: 1;
+  margin-bottom: 16px;
+}

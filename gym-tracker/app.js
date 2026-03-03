@@ -11,14 +11,21 @@ const App = {
   activeWorkout: null,   // live workout session object
   timerInterval: null,   // setInterval handle for the workout timer
   settingsOpen: false,
+  restTimerEnd: null,    // timestamp when rest timer ends
+  restTimerInterval: null, // setInterval handle for rest timer
+  plateBarWeight: 45,    // selected bar weight for plate calculator
 };
 
 // ── Storage helpers ────────────────────────────────────────────
 const Store = {
-  workouts()         { return JSON.parse(localStorage.getItem('gt_workouts') || '[]'); },
-  saveWorkouts(arr)  { localStorage.setItem('gt_workouts', JSON.stringify(arr)); },
-  settings()         { return JSON.parse(localStorage.getItem('gt_settings') || '{"unit":"lbs"}'); },
-  saveSettings(s)    { localStorage.setItem('gt_settings', JSON.stringify(s)); },
+  workouts()               { return JSON.parse(localStorage.getItem('gt_workouts') || '[]'); },
+  saveWorkouts(arr)        { localStorage.setItem('gt_workouts', JSON.stringify(arr)); },
+  settings()               { return JSON.parse(localStorage.getItem('gt_settings') || '{"unit":"lbs"}'); },
+  saveSettings(s)          { localStorage.setItem('gt_settings', JSON.stringify(s)); },
+  routines()               { return JSON.parse(localStorage.getItem('gt_routines') || '[]'); },
+  saveRoutines(arr)        { localStorage.setItem('gt_routines', JSON.stringify(arr)); },
+  customExercises()        { return JSON.parse(localStorage.getItem('gt_custom_exercises') || '[]'); },
+  saveCustomExercises(arr) { localStorage.setItem('gt_custom_exercises', JSON.stringify(arr)); },
 };
 
 // ── Utility helpers ────────────────────────────────────────────
@@ -61,8 +68,17 @@ function totalVolume(workout) {
 }
 
 function isCardioEx(exerciseId) {
-  const ex = EXERCISES.find(e => e.id === exerciseId);
+  const ex = getAllExercises().find(e => e.id === exerciseId);
   return ex && ex.type === 'cardio';
+}
+
+function getAllExercises() {
+  return [...EXERCISES, ...Store.customExercises()];
+}
+
+function calc1RM(weight, reps) {
+  if (reps <= 1) return weight;
+  return Math.round(weight * (1 + reps / 30)); // Epley formula
 }
 
 function totalSets(workout) {
@@ -101,6 +117,7 @@ function navigate(view) {
   if (App.activeWorkout && view !== 'workout' && App.view === 'workout') {
     if (!confirm('You have an active workout. Leave and discard it?')) return;
     clearInterval(App.timerInterval);
+    cancelRestTimer();
     App.activeWorkout = null;
   }
   App.view = view;
@@ -207,6 +224,20 @@ function renderHome() {
         </button>
       </div>
 
+      ${Store.routines().length ? `
+        <div class="section-title">My Routines</div>
+        <div class="routines-scroll">
+          ${Store.routines().map(r => `
+            <div class="routine-card">
+              <div class="routine-name">${r.name}</div>
+              <div class="routine-meta">${r.exerciseIds.length} exercise${r.exerciseIds.length !== 1 ? 's' : ''}</div>
+              <div class="routine-actions">
+                <button class="btn btn-primary btn-sm" onclick="startFromRoutine('${r.id}')">Start</button>
+                <button class="btn btn-ghost btn-sm" onclick="deleteRoutine('${r.id}')">✕</button>
+              </div>
+            </div>`).join('')}
+        </div>` : ''}
+
       <div class="section-title">Recent Workouts</div>
       ${recentHTML}
 
@@ -267,7 +298,7 @@ function goToExerciseSelect() {
 
   // Filter exercises: an exercise is available if ALL its required
   // equipment is in selectedEquip (empty array = always available)
-  const available = EXERCISES.filter(ex =>
+  const available = getAllExercises().filter(ex =>
     (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
   );
 
@@ -327,7 +358,7 @@ function renderExerciseSelect(available) {
         <p>Tap to select. Pre-selected is a suggested balanced workout.</p>
       </div>
 
-      <div style="padding:10px 16px; display:flex; gap:8px;">
+      <div style="padding:10px 16px; display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn btn-ghost btn-sm" onclick="selectAll(${JSON.stringify(available.map(e=>e.id))})">
           Select All
         </button>
@@ -336,6 +367,9 @@ function renderExerciseSelect(available) {
         </button>
         <button class="btn btn-ghost btn-sm" onclick="goToEquipSelect()">
           ← Back
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="saveCurrentAsRoutine()">
+          ★ Save Routine
         </button>
       </div>
 
@@ -360,7 +394,7 @@ function toggleExercise(id) {
   } else {
     App.selectedExIds.push(id);
   }
-  const available = EXERCISES.filter(ex =>
+  const available = getAllExercises().filter(ex =>
     (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
   );
   document.getElementById('app').innerHTML = renderExerciseSelect(available);
@@ -368,7 +402,7 @@ function toggleExercise(id) {
 
 function selectAll(ids) {
   App.selectedExIds = [...ids];
-  const available = EXERCISES.filter(ex =>
+  const available = getAllExercises().filter(ex =>
     (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
   );
   document.getElementById('app').innerHTML = renderExerciseSelect(available);
@@ -376,7 +410,7 @@ function selectAll(ids) {
 
 function clearAll() {
   App.selectedExIds = [];
-  const available = EXERCISES.filter(ex =>
+  const available = getAllExercises().filter(ex =>
     (ex.equipment.length === 0 ? App.selectedEquip.has('none') : ex.equipment.every(e => App.selectedEquip.has(e)))
   );
   document.getElementById('app').innerHTML = renderExerciseSelect(available);
@@ -393,7 +427,7 @@ function beginWorkout() {
   if (App.selectedExIds.length === 0) return;
 
   const exercises = App.selectedExIds.map(id => {
-    const ex = EXERCISES.find(e => e.id === id);
+    const ex = getAllExercises().find(e => e.id === id);
     return {
       exerciseId: id,
       exerciseName: ex.name,
@@ -435,15 +469,17 @@ function renderActiveWorkout() {
       prHTML = ` &nbsp;<span style="color:var(--accent)">PR: ${best.weight}${unit} × ${best.reps}</span>`;
     }
 
-    // Suggest default weight from last session
-    const defaultWeight = last
-      ? last.sets[last.sets.length - 1].weight
-      : 0;
-    const defaultReps = last
-      ? last.sets[last.sets.length - 1].reps
-      : 10;
+    // Suggest default weight/reps from last session
+    const defaultWeight = last ? last.sets[last.sets.length - 1].weight : 0;
+    const defaultReps   = last ? last.sets[last.sets.length - 1].reps   : 10;
+    const defaultDuration = (last && last.sets[last.sets.length - 1].duration != null)
+      ? last.sets[last.sets.length - 1].duration : 20;
+    const defaultDistance = (last && last.sets[last.sets.length - 1].distance != null)
+      ? last.sets[last.sets.length - 1].distance : 0;
 
     const cardio = isCardioEx(ex.exerciseId);
+    const exDef = getAllExercises().find(e => e.id === ex.exerciseId);
+    const usesBarbell = exDef && exDef.equipment.includes('barbell');
     const setsHTML = renderSetsTable(ex.sets, i, unit, cardio);
 
     const colHeaders = cardio
@@ -457,7 +493,7 @@ function renderActiveWorkout() {
               <div class="log-input-label">Duration (min)</div>
               <div class="stepper-wrap">
                 <button class="step-btn" onclick="stepVal('wt-${i}', -5)">−</button>
-                <input type="number" id="wt-${i}" value="20" min="0" step="1">
+                <input type="number" id="wt-${i}" value="${defaultDuration}" min="0" step="1">
                 <button class="step-btn" onclick="stepVal('wt-${i}', 5)">+</button>
               </div>
             </div>
@@ -465,7 +501,7 @@ function renderActiveWorkout() {
               <div class="log-input-label">Distance (mi)</div>
               <div class="stepper-wrap">
                 <button class="step-btn" onclick="stepVal('rp-${i}', -0.1)">−</button>
-                <input type="number" id="rp-${i}" value="0" min="0" step="0.1">
+                <input type="number" id="rp-${i}" value="${defaultDistance}" min="0" step="0.1">
                 <button class="step-btn" onclick="stepVal('rp-${i}', 0.1)">+</button>
               </div>
             </div>
@@ -491,7 +527,10 @@ function renderActiveWorkout() {
               </div>
             </div>
           </div>
-          <button class="log-set-btn" onclick="logSet(${i})">✓ Log Set</button>
+          <div class="log-form-row">
+            <button class="log-set-btn" onclick="logSet(${i})">✓ Log Set</button>
+            ${usesBarbell ? `<button class="btn btn-ghost btn-sm plates-btn" onclick="openPlateCalc(parseFloat(document.getElementById('wt-${i}').value)||0)">🏋 Plates</button>` : ''}
+          </div>
         </div>`;
 
     return `
@@ -589,6 +628,7 @@ function logSet(exIdx) {
   if (setsEl) {
     setsEl.innerHTML = renderSetsTable(ex.sets, exIdx, unit, cardio);
   }
+  startRestTimer();
 }
 
 function deleteSet(exIdx, setIdx) {
@@ -619,6 +659,7 @@ function startTimer() {
 // ── Finish Workout ─────────────────────────────────────────────
 function finishWorkout() {
   clearInterval(App.timerInterval);
+  cancelRestTimer();
 
   const wk = App.activeWorkout;
   const unit = Store.settings().unit || 'lbs';
@@ -626,6 +667,13 @@ function finishWorkout() {
   const sets = totalSets(wk);
   const vol  = totalVolume(wk);
   const exCount = wk.exercises.filter(e => e.sets.length > 0).length;
+
+  // Build a smart default name from the exercise categories
+  const cats = [...new Set(wk.exercises.filter(e => e.sets.length > 0).map(e => e.category))];
+  let smartName = 'Workout';
+  if (cats.length === 1) smartName = cats[0] + ' Day';
+  else if (cats.length === 2) smartName = cats.join(' & ');
+  else if (cats.length >= 3) smartName = 'Full Body';
 
   // Show completion modal
   document.getElementById('app').innerHTML += `
@@ -648,6 +696,10 @@ function finishWorkout() {
             <div class="modal-stat-label">${unit} Vol</div>
           </div>
         </div>
+        <div style="margin:16px 0 8px;">
+          <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Workout Name</div>
+          <input class="input-field" type="text" id="workout-name-input" value="${smartName}" style="width:100%;box-sizing:border-box;">
+        </div>
         <div class="modal-buttons">
           <button class="btn btn-primary" onclick="saveWorkout()">Save Workout</button>
           <button class="btn btn-ghost" onclick="discardWorkout()">Discard</button>
@@ -660,6 +712,8 @@ function saveWorkout() {
   const wk = App.activeWorkout;
   const duration = Math.floor((Date.now() - wk.startTime) / 1000);
   wk.duration = duration;
+  const nameInput = document.getElementById('workout-name-input');
+  wk.name = (nameInput && nameInput.value.trim()) || wk.name || 'Workout';
   // Only keep exercises that have at least one logged set
   wk.exercises = wk.exercises.filter(e => e.sets.length > 0);
 
@@ -925,11 +979,25 @@ function renderProgressChart(exerciseId) {
         </div>`;
     }).join('');
 
+    // Best estimated 1RM across all sessions
+    let best1RM = 0;
+    sessions.forEach(s => s.sets.forEach(st => {
+      const est = calc1RM(parseFloat(st.weight) || 0, parseInt(st.reps) || 0);
+      if (est > best1RM) best1RM = est;
+    }));
+
     contentEl.innerHTML = `
-      <div class="pr-badge">
-        <div class="pr-badge-label">Personal Record 🏆</div>
-        <div class="pr-badge-value">${prSet.weight} ${unit}</div>
-        <div class="pr-badge-sub">${prSet.reps} reps · ${fmtDate(pr.date)}</div>
+      <div class="pr-badges-row">
+        <div class="pr-badge">
+          <div class="pr-badge-label">Personal Record 🏆</div>
+          <div class="pr-badge-value">${prSet.weight} ${unit}</div>
+          <div class="pr-badge-sub">${prSet.reps} reps · ${fmtDate(pr.date)}</div>
+        </div>
+        <div class="pr-badge">
+          <div class="pr-badge-label">Est. 1RM 💪</div>
+          <div class="pr-badge-value">${best1RM} ${unit}</div>
+          <div class="pr-badge-sub">Epley formula</div>
+        </div>
       </div>
       <div class="section-title" style="padding-left:0;margin-bottom:8px;">Max Weight Per Session</div>
       <div class="progress-chart">${chartRows}</div>
@@ -1156,6 +1224,7 @@ function importData(file) {
 function openSettings() {
   const settings = Store.settings();
   const unit = settings.unit || 'lbs';
+  const restDur = settings.restTimerDuration || 90;
 
   const overlay = document.createElement('div');
   overlay.className = 'settings-overlay';
@@ -1175,6 +1244,27 @@ function openSettings() {
           <div class="toggle-opt ${unit === 'lbs' ? 'active' : ''}" onclick="setUnit('lbs')">lbs</div>
           <div class="toggle-opt ${unit === 'kg' ? 'active' : ''}" onclick="setUnit('kg')">kg</div>
         </div>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Rest Timer Default</div>
+          <div class="settings-row-sub">Auto-starts after every logged set</div>
+        </div>
+        <div class="toggle-group">
+          <div class="toggle-opt ${restDur===30?'active':''}" onclick="setRestDefault(30)">30s</div>
+          <div class="toggle-opt ${restDur===60?'active':''}" onclick="setRestDefault(60)">1m</div>
+          <div class="toggle-opt ${restDur===90?'active':''}" onclick="setRestDefault(90)">90s</div>
+          <div class="toggle-opt ${restDur===120?'active':''}" onclick="setRestDefault(120)">2m</div>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Custom Exercises</div>
+          <div class="settings-row-sub">${Store.customExercises().length} custom exercise${Store.customExercises().length !== 1 ? 's' : ''}</div>
+        </div>
+        <button class="btn btn-sm" onclick="openCustomExercisePanel()">Manage</button>
       </div>
 
       <div class="settings-row">
@@ -1233,6 +1323,326 @@ function clearAllData() {
   localStorage.removeItem('gt_workouts');
   closeSettings();
   document.getElementById('app').innerHTML = renderHome();
+}
+
+// ══════════════════════════════════════════════════════════════
+// REST TIMER
+// ══════════════════════════════════════════════════════════════
+function playRestBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.18, 0.36].forEach(t => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.15);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.15);
+    });
+  } catch(e) {}
+}
+
+function startRestTimer() {
+  const duration = Store.settings().restTimerDuration || 90;
+  App.restTimerEnd = Date.now() + duration * 1000;
+
+  const existing = document.getElementById('rest-timer-overlay');
+  if (existing) existing.remove();
+  clearInterval(App.restTimerInterval);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'rest-timer-overlay';
+  overlay.id = 'rest-timer-overlay';
+
+  overlay.innerHTML = `
+    <div class="rest-timer-card">
+      <div class="rest-timer-label">Rest Timer</div>
+      <div class="rest-timer-count" id="rest-timer-count">${fmtDuration(duration)}</div>
+      <div class="rest-timer-presets">
+        <button class="btn btn-ghost btn-sm" onclick="setRestDuration(30)">30s</button>
+        <button class="btn btn-ghost btn-sm" onclick="setRestDuration(60)">1 min</button>
+        <button class="btn btn-ghost btn-sm" onclick="setRestDuration(90)">90s</button>
+        <button class="btn btn-ghost btn-sm" onclick="setRestDuration(120)">2 min</button>
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="cancelRestTimer()">Skip</button>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  App.restTimerInterval = setInterval(() => {
+    const remaining = Math.max(0, Math.ceil((App.restTimerEnd - Date.now()) / 1000));
+    const el = document.getElementById('rest-timer-count');
+    if (el) el.textContent = fmtDuration(remaining);
+    if (remaining <= 0) {
+      cancelRestTimer();
+      playRestBeep();
+    }
+  }, 1000);
+}
+
+function setRestDuration(seconds) {
+  App.restTimerEnd = Date.now() + seconds * 1000;
+  const el = document.getElementById('rest-timer-count');
+  if (el) el.textContent = fmtDuration(seconds);
+}
+
+function cancelRestTimer() {
+  clearInterval(App.restTimerInterval);
+  App.restTimerInterval = null;
+  App.restTimerEnd = null;
+  const el = document.getElementById('rest-timer-overlay');
+  if (el) el.remove();
+}
+
+function setRestDefault(seconds) {
+  Store.saveSettings({ ...Store.settings(), restTimerDuration: seconds });
+  closeSettings();
+  openSettings();
+}
+
+// ══════════════════════════════════════════════════════════════
+// PLATE CALCULATOR
+// ══════════════════════════════════════════════════════════════
+function calcPlates(totalWeight, barbellWeight) {
+  const plateSizes = [45, 35, 25, 10, 5, 2.5];
+  let remaining = Math.round(((totalWeight - barbellWeight) / 2) * 10) / 10;
+  if (remaining <= 0) return [];
+  const result = [];
+  for (const plate of plateSizes) {
+    const count = Math.floor(remaining / plate + 0.001);
+    if (count > 0) {
+      result.push({ weight: plate, count });
+      remaining = Math.round((remaining - plate * count) * 10) / 10;
+    }
+  }
+  return result;
+}
+
+function openPlateCalc(targetWeight) {
+  const existing = document.getElementById('plate-calc-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'plate-calc-overlay';
+  overlay.id = 'plate-calc-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closePlateCalc(); };
+
+  overlay.innerHTML = `
+    <div class="plate-calc-sheet">
+      <div class="settings-title">Plate Calculator</div>
+      <div class="settings-row" style="align-items:center;">
+        <div class="settings-row-label">Target Weight</div>
+        <div class="stepper-wrap">
+          <button class="step-btn" onclick="stepVal('plate-target',-5);updatePlateCalc()">−</button>
+          <input type="number" id="plate-target" value="${targetWeight}" min="0" step="2.5"
+            style="width:70px;" oninput="updatePlateCalc()">
+          <button class="step-btn" onclick="stepVal('plate-target',5);updatePlateCalc()">+</button>
+        </div>
+      </div>
+      <div class="settings-row" style="align-items:center;">
+        <div class="settings-row-label">Bar Weight</div>
+        <div class="toggle-group">
+          <div class="toggle-opt ${App.plateBarWeight===45?'active':''}" id="bar-45" onclick="selectBar(45)">45 lb</div>
+          <div class="toggle-opt ${App.plateBarWeight===35?'active':''}" id="bar-35" onclick="selectBar(35)">35 lb</div>
+          <div class="toggle-opt ${App.plateBarWeight===15?'active':''}" id="bar-15" onclick="selectBar(15)">15 lb</div>
+        </div>
+      </div>
+      <div id="plate-breakdown" style="margin-top:16px;min-height:48px;"></div>
+      <button class="btn btn-ghost" style="width:100%;margin-top:16px;" onclick="closePlateCalc()">Done</button>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  updatePlateCalc();
+}
+
+function selectBar(weight) {
+  App.plateBarWeight = weight;
+  document.querySelectorAll('#plate-calc-overlay .toggle-opt').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(`bar-${weight}`);
+  if (el) el.classList.add('active');
+  updatePlateCalc();
+}
+
+function updatePlateCalc() {
+  const targetInput = document.getElementById('plate-target');
+  const target = parseFloat(targetInput && targetInput.value) || 0;
+  const bar = App.plateBarWeight || 45;
+  const el = document.getElementById('plate-breakdown');
+  if (!el) return;
+
+  if (target <= bar) {
+    el.innerHTML = `<div style="color:var(--text-dim);text-align:center;padding:8px 0;">Just the bar (${bar} lb)</div>`;
+    return;
+  }
+
+  const plates = calcPlates(target, bar);
+  const perSide = ((target - bar) / 2).toFixed(1);
+  const platesHTML = plates.length
+    ? plates.map(p => `
+        <div class="plate-row">
+          <div class="plate-label">${p.weight} lb</div>
+          <div class="plate-count">× ${p.count} per side</div>
+        </div>`).join('')
+    : '<div style="color:var(--text-dim);text-align:center;">No standard plates fit exactly</div>';
+
+  el.innerHTML = `
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">${perSide} lb per side</div>
+    ${platesHTML}`;
+}
+
+function closePlateCalc() {
+  const el = document.getElementById('plate-calc-overlay');
+  if (el) el.remove();
+}
+
+// ══════════════════════════════════════════════════════════════
+// SAVED ROUTINES
+// ══════════════════════════════════════════════════════════════
+function saveCurrentAsRoutine() {
+  if (App.selectedExIds.length === 0) { alert('Select at least one exercise first.'); return; }
+  const name = prompt('Name this routine:', 'My Routine');
+  if (!name || !name.trim()) return;
+
+  const routine = {
+    id: uid(),
+    name: name.trim(),
+    exerciseIds: [...App.selectedExIds],
+    equipment: [...App.selectedEquip]
+  };
+  const all = Store.routines();
+  all.push(routine);
+  Store.saveRoutines(all);
+  alert(`Routine "${routine.name}" saved!`);
+}
+
+function startFromRoutine(routineId) {
+  const routine = Store.routines().find(r => r.id === routineId);
+  if (!routine) return;
+  App.view = 'workout';
+  App.selectedEquip = new Set(routine.equipment);
+  App.selectedExIds = [...routine.exerciseIds];
+  updateNav();
+  beginWorkout();
+}
+
+function deleteRoutine(id) {
+  if (!confirm('Delete this routine?')) return;
+  Store.saveRoutines(Store.routines().filter(r => r.id !== id));
+  document.getElementById('app').innerHTML = renderHome();
+}
+
+// ══════════════════════════════════════════════════════════════
+// CUSTOM EXERCISES
+// ══════════════════════════════════════════════════════════════
+function openCustomExercisePanel() {
+  closeSettings();
+  const customs = Store.customExercises();
+  const overlay = document.createElement('div');
+  overlay.className = 'settings-overlay';
+  overlay.id = 'custom-ex-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeCustomExercisePanel(); };
+
+  const listHTML = customs.length
+    ? customs.map(ex => `
+        <div class="settings-row" style="align-items:center;">
+          <div>
+            <div class="settings-row-label">${ex.name}</div>
+            <div class="settings-row-sub">${ex.category} · ${ex.type === 'cardio' ? 'Cardio' : 'Strength'}</div>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="deleteCustomExercise('${ex.id}')">Delete</button>
+        </div>`).join('')
+    : '<div style="color:var(--text-dim);padding:12px 0;">No custom exercises yet.</div>';
+
+  const catOptions = ['Chest','Back','Shoulders','Biceps','Triceps','Legs','Core','Cardio']
+    .map(c => `<option value="${c}">${c}</option>`).join('');
+
+  const equipOptions = ALL_EQUIPMENT.map(eq =>
+    `<label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+       <input type="checkbox" value="${eq.id}" class="custom-equip-cb"> ${eq.label}
+     </label>`).join('');
+
+  overlay.innerHTML = `
+    <div class="settings-sheet" style="max-height:90vh;overflow-y:auto;">
+      <div class="settings-title">Custom Exercises</div>
+      ${listHTML}
+      <div style="border-top:1px solid var(--border);margin:16px 0;"></div>
+      <div style="font-weight:700;font-size:14px;margin-bottom:12px;">Add New Exercise</div>
+      <div class="meas-field" style="margin-bottom:10px;">
+        <div class="meas-field-label">Name</div>
+        <input class="input-field" type="text" id="cex-name" placeholder="e.g. Cable Fly" style="width:100%;box-sizing:border-box;">
+      </div>
+      <div class="meas-field" style="margin-bottom:10px;">
+        <div class="meas-field-label">Category</div>
+        <select class="progress-select" id="cex-category" style="width:100%;">${catOptions}</select>
+      </div>
+      <div class="meas-field" style="margin-bottom:10px;">
+        <div class="meas-field-label">Type</div>
+        <div class="toggle-group">
+          <div class="toggle-opt active" id="cex-strength" onclick="selectCustomType('strength')">Strength</div>
+          <div class="toggle-opt" id="cex-cardio" onclick="selectCustomType('cardio')">Cardio</div>
+        </div>
+      </div>
+      <div class="meas-field" style="margin-bottom:16px;">
+        <div class="meas-field-label">Equipment (select all that apply)</div>
+        <div style="margin-top:8px;">${equipOptions}</div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;" onclick="saveCustomExercise()">Add Exercise</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px;" onclick="closeCustomExercisePanel()">Back to Settings</button>
+    </div>`;
+
+  overlay.dataset.customType = 'strength';
+  document.body.appendChild(overlay);
+}
+
+function selectCustomType(type) {
+  const overlay = document.getElementById('custom-ex-overlay');
+  if (overlay) overlay.dataset.customType = type;
+  document.getElementById('cex-strength').classList.toggle('active', type === 'strength');
+  document.getElementById('cex-cardio').classList.toggle('active', type === 'cardio');
+}
+
+function saveCustomExercise() {
+  const name = (document.getElementById('cex-name').value || '').trim();
+  if (!name) { alert('Enter an exercise name.'); return; }
+
+  const category = document.getElementById('cex-category').value;
+  const overlay = document.getElementById('custom-ex-overlay');
+  const type = (overlay && overlay.dataset.customType) || 'strength';
+
+  const equipment = [...document.querySelectorAll('.custom-equip-cb:checked')].map(cb => cb.value);
+
+  const ex = {
+    id: 'custom_' + uid(),
+    name,
+    muscle: category,
+    secondary: [],
+    equipment,
+    category,
+    instructions: '',
+    custom: true,
+    ...(type === 'cardio' ? { type: 'cardio' } : {})
+  };
+
+  const all = Store.customExercises();
+  all.push(ex);
+  Store.saveCustomExercises(all);
+  closeCustomExercisePanel();
+  openSettings();
+}
+
+function deleteCustomExercise(id) {
+  if (!confirm('Delete this custom exercise?')) return;
+  Store.saveCustomExercises(Store.customExercises().filter(e => e.id !== id));
+  closeCustomExercisePanel();
+  openSettings();
+}
+
+function closeCustomExercisePanel() {
+  const el = document.getElementById('custom-ex-overlay');
+  if (el) el.remove();
 }
 
 // ══════════════════════════════════════════════════════════════
