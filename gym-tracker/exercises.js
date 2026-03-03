@@ -803,6 +803,86 @@ const EXERCISES = [
     equipment: [],
     category: "Cardio",
     instructions: "Jump feet apart while raising arms overhead, then jump back together. Classic cardio warmup. Do before heavy lifts."
+  },
+  {
+    id: "treadmill_run",
+    name: "Treadmill Run",
+    muscle: "Cardiovascular",
+    secondary: ["Legs", "Core"],
+    equipment: ["machine"],
+    category: "Cardio",
+    type: "cardio",
+    instructions: "Set your speed and incline. Start with a 2-3 min warmup walk. Log duration and distance when done."
+  },
+  {
+    id: "outdoor_run",
+    name: "Outdoor Run",
+    muscle: "Cardiovascular",
+    secondary: ["Legs", "Core"],
+    equipment: [],
+    category: "Cardio",
+    type: "cardio",
+    instructions: "Log your duration and distance. Track your pace over time to see improvement."
+  },
+  {
+    id: "stationary_bike",
+    name: "Stationary Bike",
+    muscle: "Cardiovascular",
+    secondary: ["Legs"],
+    equipment: ["machine"],
+    category: "Cardio",
+    type: "cardio",
+    instructions: "Set resistance level. Adjust seat so leg is nearly straight at bottom of pedal stroke. Good low-impact cardio."
+  },
+  {
+    id: "rowing_machine",
+    name: "Rowing Machine",
+    muscle: "Cardiovascular",
+    secondary: ["Back", "Arms", "Legs"],
+    equipment: ["machine"],
+    category: "Cardio",
+    type: "cardio",
+    instructions: "Drive with legs first, then lean back, then pull arms to chest. Reverse order on return. Excellent full-body cardio."
+  },
+  {
+    id: "elliptical",
+    name: "Elliptical",
+    muscle: "Cardiovascular",
+    secondary: ["Legs", "Core"],
+    equipment: ["machine"],
+    category: "Cardio",
+    type: "cardio",
+    instructions: "Set resistance and incline. Push and pull the handles to engage upper body. Low-impact and easy on joints."
+  },
+  {
+    id: "stair_climber",
+    name: "Stair Climber",
+    muscle: "Cardiovascular",
+    secondary: ["Glutes", "Legs"],
+    equipment: ["machine"],
+    category: "Cardio",
+    type: "cardio",
+    instructions: "Set a manageable pace. Don't lean too heavily on the rails — let your legs do the work. Great for glutes."
+  },
+  {
+    id: "jump_rope",
+    name: "Jump Rope",
+    muscle: "Cardiovascular",
+    secondary: ["Calves", "Shoulders"],
+    equipment: [],
+    category: "Cardio",
+    type: "cardio",
+    instructions: "Keep a steady rhythm with small wrist rotations. Try intervals: 30s on, 30s rest. Log total duration."
+  },
+  {
+    id: "hiit",
+    name: "HIIT Circuit",
+    muscle: "Cardiovascular",
+    secondary: ["Full Body"],
+    equipment: [],
+    category: "Cardio",
+    type: "cardio",
+    instructions: "Alternate 20-40 seconds of high intensity work with 10-20 seconds rest. Log total session duration and rounds completed."
   }
 
 ];

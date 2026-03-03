@@ -60,6 +60,11 @@ function totalVolume(workout) {
   return Math.round(v);
 }
 
+function isCardioEx(exerciseId) {
+  const ex = EXERCISES.find(e => e.id === exerciseId);
+  return ex && ex.type === 'cardio';
+}
+
 function totalSets(workout) {
   return (workout.exercises || []).reduce((acc, ex) => acc + (ex.sets || []).length, 0);
 }
@@ -442,29 +447,35 @@ function renderActiveWorkout() {
       ? last.sets[last.sets.length - 1].reps
       : 10;
 
-    const setsHTML = renderSetsTable(ex.sets, i, unit);
+    const cardio = isCardioEx(ex.exerciseId);
+    const setsHTML = renderSetsTable(ex.sets, i, unit, cardio);
 
-    return `
-      <div class="exercise-card" id="ex-card-${i}">
-        <div class="exercise-card-header">
-          <div class="exercise-card-top">
-            <div class="exercise-name">${ex.exerciseName}</div>
-            <span class="badge ${muscleBadgeClass(ex.muscle)}">${ex.muscle}</span>
+    const colHeaders = cardio
+      ? `<span>SESSION</span><span>DURATION</span><span>DIST</span><span></span>`
+      : `<span>SET</span><span>WEIGHT</span><span>REPS</span><span></span>`;
+
+    const logForm = cardio ? `
+        <div class="log-form">
+          <div class="log-inputs">
+            <div class="log-input-group">
+              <div class="log-input-label">Duration (min)</div>
+              <div class="stepper-wrap">
+                <button class="step-btn" onclick="stepVal('wt-${i}', -5)">−</button>
+                <input type="number" id="wt-${i}" value="20" min="0" step="1">
+                <button class="step-btn" onclick="stepVal('wt-${i}', 5)">+</button>
+              </div>
+            </div>
+            <div class="log-input-group">
+              <div class="log-input-label">Distance (mi)</div>
+              <div class="stepper-wrap">
+                <button class="step-btn" onclick="stepVal('rp-${i}', -0.1)">−</button>
+                <input type="number" id="rp-${i}" value="0" min="0" step="0.1">
+                <button class="step-btn" onclick="stepVal('rp-${i}', 0.1)">+</button>
+              </div>
+            </div>
           </div>
-          <div class="prev-best-label">${lastHTML}${prHTML}</div>
-          <button class="instructions-toggle mt-8" onclick="toggleInstructions(${i})">
-            ⓘ How to do this
-          </button>
-          <div class="ex-instructions" id="inst-${i}">${ex.instructions}</div>
-        </div>
-
-        <div class="sets-table-wrap">
-          <div class="sets-header-row">
-            <span>SET</span><span>WEIGHT</span><span>REPS</span><span></span>
-          </div>
-          <div id="sets-${i}">${setsHTML}</div>
-        </div>
-
+          <button class="log-set-btn" onclick="logSet(${i})">✓ Log Session</button>
+        </div>` : `
         <div class="log-form">
           <div class="log-inputs">
             <div class="log-input-group">
@@ -485,7 +496,28 @@ function renderActiveWorkout() {
             </div>
           </div>
           <button class="log-set-btn" onclick="logSet(${i})">✓ Log Set</button>
+        </div>`;
+
+    return `
+      <div class="exercise-card" id="ex-card-${i}">
+        <div class="exercise-card-header">
+          <div class="exercise-card-top">
+            <div class="exercise-name">${ex.exerciseName}</div>
+            <span class="badge ${muscleBadgeClass(ex.muscle)}">${ex.muscle}</span>
+          </div>
+          <div class="prev-best-label">${lastHTML}${prHTML}</div>
+          <button class="instructions-toggle mt-8" onclick="toggleInstructions(${i})">
+            ⓘ How to do this
+          </button>
+          <div class="ex-instructions" id="inst-${i}">${ex.instructions}</div>
         </div>
+
+        <div class="sets-table-wrap">
+          <div class="sets-header-row">${colHeaders}</div>
+          <div id="sets-${i}">${setsHTML}</div>
+        </div>
+
+        ${logForm}
       </div>`;
   }).join('');
 
@@ -509,15 +541,27 @@ function renderActiveWorkout() {
     </div>`;
 }
 
-function renderSetsTable(sets, exIdx, unit) {
+function renderSetsTable(sets, exIdx, unit, cardio) {
   if (!sets.length) return '';
-  return sets.map((s, si) => `
-    <div class="set-row">
-      <div class="set-num">${si + 1}</div>
-      <div class="set-val">${s.weight} ${unit}</div>
-      <div class="set-val">${s.reps} reps</div>
-      <button class="set-del" onclick="deleteSet(${exIdx}, ${si})">✕</button>
-    </div>`).join('');
+  return sets.map((s, si) => {
+    if (cardio) {
+      const dist = s.distance > 0 ? `${s.distance} mi` : '—';
+      return `
+        <div class="set-row">
+          <div class="set-num">${si + 1}</div>
+          <div class="set-val">${s.duration} min</div>
+          <div class="set-val">${dist}</div>
+          <button class="set-del" onclick="deleteSet(${exIdx}, ${si})">✕</button>
+        </div>`;
+    }
+    return `
+      <div class="set-row">
+        <div class="set-num">${si + 1}</div>
+        <div class="set-val">${s.weight} ${unit}</div>
+        <div class="set-val">${s.reps} reps</div>
+        <button class="set-del" onclick="deleteSet(${exIdx}, ${si})">✕</button>
+      </div>`;
+  }).join('');
 }
 
 function stepVal(id, delta) {
@@ -529,22 +573,26 @@ function stepVal(id, delta) {
 }
 
 function logSet(exIdx) {
-  const wt = parseFloat(document.getElementById(`wt-${exIdx}`).value) || 0;
-  const rp = parseInt(document.getElementById(`rp-${exIdx}`).value)  || 0;
-  if (rp === 0) { alert('Enter reps before logging a set.'); return; }
-
   const unit = Store.settings().unit || 'lbs';
-  App.activeWorkout.exercises[exIdx].sets.push({ weight: wt, reps: rp });
+  const ex = App.activeWorkout.exercises[exIdx];
+  const cardio = isCardioEx(ex.exerciseId);
 
-  // Update only the sets table for this exercise (no full re-render)
-  const setsEl = document.getElementById(`sets-${exIdx}`);
-  if (setsEl) {
-    setsEl.innerHTML = renderSetsTable(App.activeWorkout.exercises[exIdx].sets, exIdx, unit);
+  if (cardio) {
+    const duration = parseFloat(document.getElementById(`wt-${exIdx}`).value) || 0;
+    const distance = parseFloat(document.getElementById(`rp-${exIdx}`).value) || 0;
+    if (duration === 0) { alert('Enter a duration before logging.'); return; }
+    ex.sets.push({ duration, distance });
+  } else {
+    const wt = parseFloat(document.getElementById(`wt-${exIdx}`).value) || 0;
+    const rp = parseInt(document.getElementById(`rp-${exIdx}`).value) || 0;
+    if (rp === 0) { alert('Enter reps before logging a set.'); return; }
+    ex.sets.push({ weight: wt, reps: rp });
   }
 
-  // Keep weight but clear reps back to 10 (or last reps)
-  const rpEl = document.getElementById(`rp-${exIdx}`);
-  if (rpEl) rpEl.value = rp;
+  const setsEl = document.getElementById(`sets-${exIdx}`);
+  if (setsEl) {
+    setsEl.innerHTML = renderSetsTable(ex.sets, exIdx, unit, cardio);
+  }
 }
 
 function deleteSet(exIdx, setIdx) {
@@ -659,9 +707,14 @@ function renderHistory() {
     const exNames = (w.exercises || []).map(e => e.exerciseName).join(', ');
 
     const detail = (w.exercises || []).map(ex => {
-      const setsText = (ex.sets || []).map((s,si) =>
-        `Set ${si+1}: ${s.weight}${unit} × ${s.reps} reps`
-      ).join('<br>');
+      const cardio = isCardioEx(ex.exerciseId);
+      const setsText = (ex.sets || []).map((s, si) => {
+        if (cardio) {
+          const dist = s.distance > 0 ? ` · ${s.distance} mi` : '';
+          return `Session ${si+1}: ${s.duration} min${dist}`;
+        }
+        return `Set ${si+1}: ${s.weight}${unit} × ${s.reps} reps`;
+      }).join('<br>');
       return `
         <div class="history-ex-row">
           <div class="history-ex-name">${ex.exerciseName}</div>
@@ -762,14 +815,21 @@ function renderProgressChart(exerciseId) {
   const contentEl = document.getElementById('progress-content');
   if (!contentEl) return;
 
+  const cardio = isCardioEx(exerciseId);
+
   // Collect all sessions with this exercise
   const sessions = [];
   workouts.forEach(w => {
     const ex = (w.exercises || []).find(e => e.exerciseId === exerciseId);
     if (ex && ex.sets.length > 0) {
-      const maxWeight = Math.max(...ex.sets.map(s => parseFloat(s.weight) || 0));
-      const totalReps = ex.sets.reduce((a,s) => a + (parseInt(s.reps)||0), 0);
-      sessions.push({ date: w.date, sets: ex.sets, maxWeight, totalReps });
+      if (cardio) {
+        const maxDuration = Math.max(...ex.sets.map(s => parseFloat(s.duration) || 0));
+        const totalDist = ex.sets.reduce((a,s) => a + (parseFloat(s.distance)||0), 0);
+        sessions.push({ date: w.date, sets: ex.sets, maxDuration, totalDist });
+      } else {
+        const maxWeight = Math.max(...ex.sets.map(s => parseFloat(s.weight) || 0));
+        sessions.push({ date: w.date, sets: ex.sets, maxWeight });
+      }
     }
   });
 
@@ -778,51 +838,84 @@ function renderProgressChart(exerciseId) {
     return;
   }
 
-  // PR
-  const pr = sessions.reduce((best, s) => s.maxWeight > best.maxWeight ? s : best, sessions[0]);
-  const prSet = pr.sets.reduce((a,b) => (parseFloat(b.weight) > parseFloat(a.weight) ? b : a));
+  if (cardio) {
+    // Cardio progress: show longest duration as the PR metric
+    const pr = sessions.reduce((best, s) => s.maxDuration > best.maxDuration ? s : best, sessions[0]);
+    const maxD = Math.max(...sessions.map(s => s.maxDuration)) || 1;
 
-  // Chart: each session as a bar proportional to maxWeight
-  const maxW = Math.max(...sessions.map(s => s.maxWeight)) || 1;
+    const chartRows = sessions.map(s => {
+      const pct = Math.round((s.maxDuration / maxD) * 100);
+      const dateShort = new Date(s.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      return `
+        <div class="chart-row">
+          <div class="chart-date">${dateShort}</div>
+          <div class="chart-bar-wrap"><div class="chart-bar" style="width:${pct}%;"></div></div>
+          <div class="chart-val">${s.maxDuration} min</div>
+        </div>`;
+    }).join('');
 
-  const chartRows = sessions.map(s => {
-    const pct = Math.round((s.maxWeight / maxW) * 100);
-    const dateShort = new Date(s.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    return `
-      <div class="chart-row">
-        <div class="chart-date">${dateShort}</div>
-        <div class="chart-bar-wrap">
-          <div class="chart-bar" style="width:${pct}%;"></div>
-        </div>
-        <div class="chart-val">${s.maxWeight} ${unit}</div>
-      </div>`;
-  }).join('');
+    const historyHTML = sessions.slice().reverse().map(s => {
+      const setsText = s.sets.map((st, i) => {
+        const dist = st.distance > 0 ? ` · ${st.distance} mi` : '';
+        return `<span>Session ${i+1}: <strong>${st.duration} min${dist}</strong></span>`;
+      }).join(' &nbsp; ');
+      return `
+        <div class="progress-history-entry">
+          <div class="progress-history-date">${fmtDate(s.date)}</div>
+          <div class="progress-history-sets">${setsText}</div>
+        </div>`;
+    }).join('');
 
-  // History detail
-  const historyHTML = sessions.slice().reverse().map(s => {
-    const setsText = s.sets.map((st, i) =>
-      `<span>Set ${i+1}: <strong>${st.weight}${unit} × ${st.reps} reps</strong></span>`
-    ).join(' &nbsp; ');
-    const dateStr = fmtDate(s.date);
-    return `
-      <div class="progress-history-entry">
-        <div class="progress-history-date">${dateStr}</div>
-        <div class="progress-history-sets">${setsText}</div>
-      </div>`;
-  }).join('');
+    contentEl.innerHTML = `
+      <div class="pr-badge">
+        <div class="pr-badge-label">Longest Session 🏆</div>
+        <div class="pr-badge-value">${pr.maxDuration} min</div>
+        <div class="pr-badge-sub">${fmtDate(pr.date)}</div>
+      </div>
+      <div class="section-title" style="padding-left:0;margin-bottom:8px;">Duration Per Session</div>
+      <div class="progress-chart">${chartRows}</div>
+      <div class="section-title" style="padding-left:0;margin-top:16px;margin-bottom:8px;">Session History</div>
+      ${historyHTML}`;
 
-  contentEl.innerHTML = `
-    <div class="pr-badge">
-      <div class="pr-badge-label">Personal Record 🏆</div>
-      <div class="pr-badge-value">${prSet.weight} ${unit}</div>
-      <div class="pr-badge-sub">${prSet.reps} reps · ${fmtDate(pr.date)}</div>
-    </div>
+  } else {
+    // Strength progress
+    const pr = sessions.reduce((best, s) => s.maxWeight > best.maxWeight ? s : best, sessions[0]);
+    const prSet = pr.sets.reduce((a,b) => (parseFloat(b.weight) > parseFloat(a.weight) ? b : a));
+    const maxW = Math.max(...sessions.map(s => s.maxWeight)) || 1;
 
-    <div class="section-title" style="padding-left:0;margin-bottom:8px;">Max Weight Per Session</div>
-    <div class="progress-chart">${chartRows}</div>
+    const chartRows = sessions.map(s => {
+      const pct = Math.round((s.maxWeight / maxW) * 100);
+      const dateShort = new Date(s.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      return `
+        <div class="chart-row">
+          <div class="chart-date">${dateShort}</div>
+          <div class="chart-bar-wrap"><div class="chart-bar" style="width:${pct}%;"></div></div>
+          <div class="chart-val">${s.maxWeight} ${unit}</div>
+        </div>`;
+    }).join('');
 
-    <div class="section-title" style="padding-left:0;margin-top:16px;margin-bottom:8px;">Session History</div>
-    ${historyHTML}`;
+    const historyHTML = sessions.slice().reverse().map(s => {
+      const setsText = s.sets.map((st, i) =>
+        `<span>Set ${i+1}: <strong>${st.weight}${unit} × ${st.reps} reps</strong></span>`
+      ).join(' &nbsp; ');
+      return `
+        <div class="progress-history-entry">
+          <div class="progress-history-date">${fmtDate(s.date)}</div>
+          <div class="progress-history-sets">${setsText}</div>
+        </div>`;
+    }).join('');
+
+    contentEl.innerHTML = `
+      <div class="pr-badge">
+        <div class="pr-badge-label">Personal Record 🏆</div>
+        <div class="pr-badge-value">${prSet.weight} ${unit}</div>
+        <div class="pr-badge-sub">${prSet.reps} reps · ${fmtDate(pr.date)}</div>
+      </div>
+      <div class="section-title" style="padding-left:0;margin-bottom:8px;">Max Weight Per Session</div>
+      <div class="progress-chart">${chartRows}</div>
+      <div class="section-title" style="padding-left:0;margin-top:16px;margin-bottom:8px;">Session History</div>
+      ${historyHTML}`;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
