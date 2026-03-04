@@ -315,6 +315,9 @@ function renderSubCard(s, paid, d) {
           ${paid ? 'Paid ✓' : 'Mark Paid'}
         </button>
         <div class="item-card-actions">
+          <button class="btn-icon" onclick="openHistory('sub','${s.id}')" title="History">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </button>
           <button class="btn-icon" onclick="openEditSub('${s.id}')" title="Edit">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
@@ -350,11 +353,11 @@ function renderBills() {
 
     topLevel.forEach(parent => {
       const children = (childMap[parent.id] || []).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-      html += renderBillCard(parent, false, children, allBills);
+      html += renderBillCard(parent, false, children);
       children.forEach(child => {
         html += `<div class="bill-child-wrapper">
                    <span class="tree-connector">└</span>
-                   ${renderBillCard(child, true, [], allBills)}
+                   ${renderBillCard(child, true, [])}
                  </div>`;
         renderedChildIds.add(child.id);
       });
@@ -362,7 +365,7 @@ function renderBills() {
 
     // Orphans: children whose parent was deleted
     allBills.filter(b => b.parentId && !renderedChildIds.has(b.id)).forEach(b => {
-      html += renderBillCard(b, false, [], allBills);
+      html += renderBillCard(b, false, []);
     });
   }
 
@@ -370,7 +373,7 @@ function renderBills() {
   return html;
 }
 
-function renderBillCard(b, isChild, children, allBills) {
+function renderBillCard(b, isChild, children) {
   const d = daysUntil(b.dueDate);
   const paidChip = b.paid
     ? '<span class="chip chip-paid">Paid ✓</span>'
@@ -412,6 +415,9 @@ function renderBillCard(b, isChild, children, allBills) {
           ${b.paid ? 'Paid ✓' : 'Mark Paid'}
         </button>
         <div class="item-card-actions">
+          <button class="btn-icon" onclick="openHistory('bill','${b.id}')" title="History">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </button>
           <button class="btn-icon" onclick="openEditBill('${b.id}')" title="Edit">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
@@ -502,7 +508,6 @@ function responsibleFields(data) {
   const resp = data.responsible || 'person1';
   const spct = data.splitPct ?? 50;
   const showCustom = resp === 'split' && spct !== 50;
-  const showSplit  = resp === 'split';
 
   return `
     <div class="form-group">
@@ -545,6 +550,33 @@ function renderModal() {
           <div class="modal-actions">
             <button class="btn-secondary" onclick="closeModal()">Cancel</button>
             <button class="btn-primary" onclick="saveVariablePayment('${data.id}')">Mark Paid</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  if (type === 'history') {
+    const payments = data.payments || [];
+    const rows = payments.length === 0
+      ? '<div class="history-empty">No payment records yet.</div>'
+      : payments.map(p => `
+          <div class="history-row">
+            <div class="history-row-left">
+              <div class="history-period">${escHtml(p.period)}</div>
+              <div class="history-date">Paid ${escHtml(p.paidAt)}</div>
+            </div>
+            <div class="history-amount">${fmtCost(p.amount)}</div>
+          </div>`).join('');
+
+    return `
+      <div class="modal-overlay" onclick="overlayClose(event)">
+        <div class="modal-sheet">
+          <div class="modal-handle"></div>
+          <div class="modal-title">Payment History</div>
+          <div class="history-name">${escHtml(data.name)}</div>
+          <div class="history-list">${rows}</div>
+          <div class="modal-actions">
+            <button class="btn-secondary" onclick="closeModal()" style="flex:1">Close</button>
           </div>
         </div>
       </div>`;
@@ -766,6 +798,13 @@ function openModal(type, data) {
   render();
 }
 
+function openHistory(type, id) {
+  const item = type === 'sub'
+    ? Store.subs().find(s => s.id === id)
+    : Store.bills().find(b => b.id === id);
+  if (item) openModal('history', { ...item, _type: type });
+}
+
 function openEditSub(id) {
   const sub = Store.subs().find(s => s.id === id);
   if (sub) openModal('editSub', sub);
@@ -847,8 +886,18 @@ function toggleSubPaid(id) {
   const sub  = subs.find(s => s.id === id);
   if (!sub) return;
   if (!sub.paidCycles) sub.paidCycles = {};
-  const key = currentCycleKey(sub);
-  sub.paidCycles[key] = !sub.paidCycles[key];
+  if (!sub.payments)   sub.payments   = [];
+  const key     = currentCycleKey(sub);
+  const wasPaid = !!sub.paidCycles[key];
+  sub.paidCycles[key] = !wasPaid;
+  if (!wasPaid) {
+    // Marking as paid — record it
+    sub.payments.unshift({ paidAt: today(), amount: sub.cost, period: key });
+  } else {
+    // Un-marking — remove the most recent record for this period
+    const idx = sub.payments.findIndex(p => p.period === key);
+    if (idx !== -1) sub.payments.splice(idx, 1);
+  }
   Store.saveSubs(subs);
   render();
 }
@@ -916,6 +965,8 @@ function saveVariablePayment(id) {
   const bills = Store.bills();
   const bill  = bills.find(b => b.id === id);
   if (!bill) return;
+  if (!bill.payments) bill.payments = [];
+  bill.payments.unshift({ paidAt: today(), amount: newAmount, period: fmtDateFull(bill.dueDate) });
   bill.amount = newAmount;
   if (bill.recurring && bill.recurrMonths) {
     bill.dueDate = advanceDate(bill.dueDate, bill.recurrMonths);
@@ -930,11 +981,16 @@ function toggleBillPaid(id) {
   const bills = Store.bills();
   const bill  = bills.find(b => b.id === id);
   if (!bill) return;
+  if (!bill.payments) bill.payments = [];
   const wasPaid = bill.paid;
   bill.paid = !bill.paid;
-  if (!wasPaid && bill.paid && bill.recurring && bill.recurrMonths) {
-    bill.dueDate = advanceDate(bill.dueDate, bill.recurrMonths);
-    bill.paid = false;
+  if (!wasPaid && bill.paid) {
+    // Record the payment before possibly advancing date
+    bill.payments.unshift({ paidAt: today(), amount: bill.amount, period: fmtDateFull(bill.dueDate) });
+    if (bill.recurring && bill.recurrMonths) {
+      bill.dueDate = advanceDate(bill.dueDate, bill.recurrMonths);
+      bill.paid = false; // reset for next cycle
+    }
   }
   Store.saveBills(bills);
   render();
