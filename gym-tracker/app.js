@@ -28,6 +28,9 @@ const Store = {
   saveRoutines(arr)        { localStorage.setItem('gt_routines', JSON.stringify(arr)); },
   customExercises()        { return JSON.parse(localStorage.getItem('gt_custom_exercises') || '[]'); },
   saveCustomExercises(arr) { localStorage.setItem('gt_custom_exercises', JSON.stringify(arr)); },
+  draftWorkout()           { return JSON.parse(localStorage.getItem('gt_draft_workout') || 'null'); },
+  saveDraftWorkout(wk)     { localStorage.setItem('gt_draft_workout', JSON.stringify(wk)); },
+  clearDraftWorkout()      { localStorage.removeItem('gt_draft_workout'); },
 };
 
 // ── Utility helpers ────────────────────────────────────────────
@@ -211,8 +214,19 @@ function renderHome() {
       </div>`;
   }).join('') : '<div class="empty-state">No workouts yet. Hit that Start button! 💪</div>';
 
+  const draft = Store.draftWorkout();
+  const resumeBanner = draft ? `
+    <div class="resume-banner" onclick="resumeWorkout()">
+      <div>
+        <div class="resume-banner-title">Workout In Progress</div>
+        <div class="resume-banner-sub">${draft.name} · ${fmtDate(draft.date)}</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="resumeWorkout()">Resume →</button>
+    </div>` : '';
+
   return `
     <div class="home-view">
+      ${resumeBanner}
       <div class="home-hero">
         <div class="home-date">${dateLabel}</div>
         <div class="home-greeting">${greeting},<br><span>Athlete</span>.</div>
@@ -253,6 +267,10 @@ function renderHome() {
 // EQUIPMENT SELECTION
 // ══════════════════════════════════════════════════════════════
 function startWorkoutFlow() {
+  if (Store.draftWorkout()) {
+    if (!confirm('You have a saved workout in progress. Discard it and start a new one?')) return;
+    Store.clearDraftWorkout();
+  }
   App.view = 'workout';
   App.workoutStep = 'equip';
   App.selectedEquip = new Set(['none']); // bodyweight always available
@@ -643,7 +661,10 @@ function renderActiveWorkout() {
           <div class="workout-name-small">${wk.name}</div>
           <div id="workout-timer">00:00</div>
         </div>
-        <button class="finish-btn" onclick="finishWorkout()">Finish</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-ghost btn-sm" onclick="saveWorkoutProgress()" style="font-size:13px;">💾 Save</button>
+          <button class="finish-btn" onclick="finishWorkout()">Finish</button>
+        </div>
       </div>
 
       ${exerciseCards}
@@ -800,6 +821,7 @@ function saveWorkout() {
   const all = Store.workouts();
   all.push(wk);
   Store.saveWorkouts(all);
+  Store.clearDraftWorkout();
 
   App.activeWorkout = null;
   App.view = 'home';
@@ -808,10 +830,35 @@ function saveWorkout() {
 }
 
 function discardWorkout() {
+  Store.clearDraftWorkout();
   App.activeWorkout = null;
   App.view = 'home';
   updateNav();
   document.getElementById('app').innerHTML = renderHome();
+}
+
+function saveWorkoutProgress() {
+  Store.saveDraftWorkout(App.activeWorkout);
+  showToast('Progress saved');
+}
+
+function resumeWorkout() {
+  const draft = Store.draftWorkout();
+  if (!draft) return;
+  App.activeWorkout = draft;
+  App.view = 'workout';
+  updateNav();
+  renderActiveWorkout();
+  startTimer();
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add('toast-show'), 10);
+  setTimeout(() => { t.classList.remove('toast-show'); setTimeout(() => t.remove(), 300); }, 2200);
 }
 
 // ══════════════════════════════════════════════════════════════
